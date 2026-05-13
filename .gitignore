@@ -1,0 +1,35 @@
+# Variables de entorno con secretos
+.env
+.env.*
+!.env.example
+
+# Base de datos local SQLite
+storage/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Dependencias PHP (si en el futuro se usa composer)
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Builds
+dist/
+build/
+
+# Caches
+.cache/
+__pycache__/
