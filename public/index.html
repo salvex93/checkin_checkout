@@ -301,7 +301,7 @@
                             if (me.user.must_change_password) {
                                 setView('change-password');
                             } else {
-                                setView((me.user.role === 'admin' || me.user.role === 'super_admin') ? 'admin-panel' : 'dashboard');
+                                setView('dashboard');
                             }
                         } catch (e) {
                             if (e._auth) setView('login'); else { toast('error', e.message); setView('login'); }
@@ -336,7 +336,7 @@
                     if (d.user.must_change_password) {
                         setView('change-password');
                     } else {
-                        setView((d.user.role === 'admin' || d.user.role === 'super_admin') ? 'admin-panel' : 'dashboard');
+                        setView('dashboard');
                     }
                     toast('success', `Bienvenido, ${d.user.name}`);
                 } catch (err) {
@@ -398,7 +398,7 @@
                                     const me = await apiFetch('auth/me');
                                     CSRF_TOKEN = me.csrf_token || CSRF_TOKEN;
                                     setCurrentUser(me.user);
-                                    setView((me.user.role === 'admin' || me.user.role === 'super_admin') ? 'admin-panel' : 'dashboard');
+                                    setView('dashboard');
                                 } catch (_) { setView('login'); }
                             }}
                             onLogout={handleLogout}
@@ -415,6 +415,7 @@
                             onToggleTheme={toggleTheme}
                             companies={companies}
                             loadCompanies={loadCompanies}
+                            onGoAdmin={() => setView('admin-panel')}
                         />
                     )}
 
@@ -424,6 +425,7 @@
                             onLogout={handleLogout}
                             theme={theme}
                             onToggleTheme={toggleTheme}
+                            onGoDashboard={() => setView('dashboard')}
                         />
                     )}
 
@@ -651,7 +653,8 @@
         // Dashboard de usuario
         // =====================================================================
 
-        const UserDashboard = ({ currentUser, onLogout, theme, onToggleTheme, companies, loadCompanies }) => {
+        const UserDashboard = ({ currentUser, onLogout, theme, onToggleTheme, companies, loadCompanies, onGoAdmin }) => {
+            const canSwitchToAdmin = currentUser.role === 'admin' || currentUser.role === 'super_admin';
             const { push: toast } = useToast();
             const [todayRecord, setTodayRecord] = useState(null);
             const [logs, setLogs] = useState([]);
@@ -743,8 +746,15 @@
                                 </div>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                        <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
                             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                            {canSwitchToAdmin && onGoAdmin && (
+                                <button onClick={onGoAdmin}
+                                    title="Cambiar a vista de administracion"
+                                    className="px-4 sm:px-5 py-2.5 sm:py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all">
+                                    Admin Console &rarr;
+                                </button>
+                            )}
                             <button onClick={onLogout}
                                 className="px-4 sm:px-6 py-2.5 sm:py-3 bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-300 rounded-2xl font-bold text-sm hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all">
                                 Cerrar Sesion
@@ -989,7 +999,7 @@
         // Panel admin
         // =====================================================================
 
-        const AdminPanel = ({ currentUser, onLogout, theme, onToggleTheme }) => {
+        const AdminPanel = ({ currentUser, onLogout, theme, onToggleTheme, onGoDashboard }) => {
             const { push: toast } = useToast();
             const isSuper = currentUser.role === 'super_admin';
             const tabs = [
@@ -1035,6 +1045,13 @@
                                 </button>
                             ))}
                             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                            {onGoDashboard && (
+                                <button onClick={onGoDashboard}
+                                    title="Volver a la vista de empleado para marcar jornada"
+                                    className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all">
+                                    &larr; Mi jornada
+                                </button>
+                            )}
                             <button onClick={onLogout} className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-300">Salir</button>
                         </div>
                     </div>

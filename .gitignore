@@ -37,3 +37,7 @@ build/
 # Caches
 .cache/
 __pycache__/
+
+# Cookies de smoke tests con curl
+cookies.txt
+cookies-*.txt

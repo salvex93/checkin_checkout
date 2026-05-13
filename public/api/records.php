@@ -19,6 +19,23 @@ const STANDARD_CLOSE_HOUR = 18;
 const OVERTIME_MAX_HOURS = 6.0;
 
 /**
+ * Bloquea el marcado de jornada si el usuario es admin/super_admin sin company_id.
+ * Los consultores ya estan amarrados a su empresa en alta; admins pueden existir
+ * sin empresa (super_admin "ghost"), pero para usar el reloj necesitan una.
+ */
+function require_company_for_clock(array $user): void {
+    $role = $user['role'] ?? '';
+    if ($role !== 'admin' && $role !== 'super_admin') return;
+    if (isset($user['company_id']) && $user['company_id'] !== null) return;
+    err(
+        'COMPANY_REQUIRED',
+        'Asigna una empresa a tu cuenta para marcar jornada.',
+        409,
+        ['role' => $role]
+    );
+}
+
+/**
  * Resuelve horario efectivo de un agente: overrides del usuario tienen prioridad,
  * caen a defaults de su empresa. Si el usuario es admin/super_admin sin empresa,
  * cae a un perfil neutro (TZ del servidor, 09-18, L-V, gracia 15).
@@ -86,6 +103,7 @@ function records_companies(): never {
 
 function records_today(): never {
     $u = require_login();
+    require_company_for_clock($u);
     $sched = effective_schedule($u);
     $tz = new DateTimeZone($sched['timezone']);
     $today = (new DateTimeImmutable('now', $tz))->format('Y-m-d');
@@ -110,6 +128,7 @@ function records_mine(): never {
 function records_clockin(array $body): never {
     require_csrf();
     $u = require_login();
+    require_company_for_clock($u);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
         ? $body['client_timezone'] : null;
@@ -188,6 +207,7 @@ function records_clockin(array $body): never {
 function records_clockout(array $body = []): never {
     require_csrf();
     $u = require_login();
+    require_company_for_clock($u);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
         ? $body['client_timezone'] : null;

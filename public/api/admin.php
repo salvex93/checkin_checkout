@@ -372,6 +372,11 @@ function admin_users_invite(array $body): never {
     if ($role === 'consultant' && $companyId === null) {
         err('INVALID_INPUT', 'Los agentes requieren empresa asignada.', 400, ['field' => 'company_id']);
     }
+    // Admin tambien marca jornada como empleado: requiere empresa al darlo de alta.
+    // super_admin queda fuera de este flujo (no se crea via admin_users_invite).
+    if ($role === 'admin' && $companyId === null) {
+        err('INVALID_INPUT', 'Los administradores requieren empresa asignada para poder marcar jornada.', 400, ['field' => 'company_id']);
+    }
 
     // Anti-enumeracion: si el email ya existe no creamos pero respondemos OK.
     $existing = db_one('SELECT id FROM users WHERE email = ?', [$email]);
