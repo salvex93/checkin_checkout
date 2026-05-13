@@ -75,8 +75,17 @@ function require_login(): array {
 
 function require_admin(): array {
     $u = require_login();
-    if (($u['role'] ?? '') !== 'admin') {
+    $role = $u['role'] ?? '';
+    if ($role !== 'admin' && $role !== 'super_admin') {
         err('FORBIDDEN', 'Operacion restringida a administradores.', 403);
+    }
+    return $u;
+}
+
+function require_super_admin(): array {
+    $u = require_login();
+    if (($u['role'] ?? '') !== 'super_admin') {
+        err('FORBIDDEN', 'Operacion restringida a super administradores.', 403);
     }
     return $u;
 }
@@ -230,4 +239,62 @@ function validate_time_hhmm(array $input, string $key, bool $required = true): ?
  */
 function validate_days_mask(array $input, string $key, bool $required = true): ?int {
     return validate_int($input, $key, 1, 127, $required);
+}
+
+/**
+ * Genera password temporal con alfabeto sin caracteres confusos (0/O, 1/I/l).
+ * Por seguridad usa random_int (CSPRNG) y garantiza al menos un caracter
+ * de cada clase requerida por la politica de fuerza.
+ */
+function password_temp_generate(int $length = 14): string {
+    $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    $lower = 'abcdefghijkmnpqrstuvwxyz';
+    $digit = '23456789';
+    $symbol = '!@#$%&*?-_';
+    $all = $upper . $lower . $digit . $symbol;
+
+    $pick = function (string $alphabet): string {
+        return $alphabet[random_int(0, strlen($alphabet) - 1)];
+    };
+    $chars = [$pick($upper), $pick($lower), $pick($digit), $pick($symbol)];
+    for ($i = count($chars); $i < $length; $i++) {
+        $chars[] = $pick($all);
+    }
+    // Shuffle CSPRNG-safe: Fisher-Yates con random_int
+    for ($i = count($chars) - 1; $i > 0; $i--) {
+        $j = random_int(0, $i);
+        [$chars[$i], $chars[$j]] = [$chars[$j], $chars[$i]];
+    }
+    return implode('', $chars);
+}
+
+/**
+ * Valida fuerza de una password: longitud minima, mayuscula, numero y simbolo.
+ */
+function validate_password_strength(string $password): void {
+    if (mb_strlen($password) < 10) {
+        err('WEAK_PASSWORD', 'La contrasena debe tener al menos 10 caracteres.', 400, ['field' => 'password']);
+    }
+    if (!preg_match('/[A-Z]/', $password)) {
+        err('WEAK_PASSWORD', 'La contrasena debe incluir al menos una mayuscula.', 400, ['field' => 'password']);
+    }
+    if (!preg_match('/[0-9]/', $password)) {
+        err('WEAK_PASSWORD', 'La contrasena debe incluir al menos un numero.', 400, ['field' => 'password']);
+    }
+    if (!preg_match('/[^A-Za-z0-9]/', $password)) {
+        err('WEAK_PASSWORD', 'La contrasena debe incluir al menos un simbolo.', 400, ['field' => 'password']);
+    }
+}
+
+/**
+ * URL base publica de la aplicacion. Permite override por env APP_BASE_URL;
+ * en su ausencia se construye desde el host actual. Usado para armar enlaces
+ * de invitacion/reset en correos.
+ */
+function app_base_url(): string {
+    $override = env('APP_BASE_URL', '');
+    if ($override !== '') return rtrim($override, '/');
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    return "{$scheme}://{$host}";
 }

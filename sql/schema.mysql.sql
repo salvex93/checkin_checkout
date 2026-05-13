@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(190) NOT NULL UNIQUE,
     name VARCHAR(120) NOT NULL,
     password_hash VARCHAR(255) NULL,
-    role ENUM('consultant','admin') NOT NULL DEFAULT 'consultant',
+    role ENUM('consultant','admin','super_admin') NOT NULL DEFAULT 'consultant',
     company_id INT NULL,
     timezone VARCHAR(64) NULL,
     work_start_time VARCHAR(5) NULL,
@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS users (
     email_verified_at DATETIME NULL,
     failed_attempts INT NOT NULL DEFAULT 0,
     locked_until DATETIME NULL,
+    must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+    password_changed_at DATETIME NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_users_company (company_id),
     INDEX idx_users_status (status),
@@ -57,6 +59,19 @@ CREATE TABLE IF NOT EXISTS invitations (
     INDEX idx_invitations_user (user_id),
     CONSTRAINT fk_invitations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_invitations_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    token_hash VARCHAR(128) NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    consumed_at DATETIME NULL,
+    ip_address VARCHAR(45) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_prtokens_user (user_id),
+    INDEX idx_prtokens_expires (expires_at),
+    CONSTRAINT fk_prtokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS attendance_records (
@@ -116,9 +131,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- Seed inicial: 3 empresas con defaults Mexico City L-V 09:00-18:00
+-- Seed inicial: empresas con defaults Mexico City L-V 09:00-18:00
 INSERT INTO companies (name, timezone, work_start_time, work_end_time, work_days_mask, grace_minutes_late) VALUES
-    ('Coppel', 'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Hyatt',  'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Arajet', 'America/Mexico_City', '09:00', '18:00', 31, 15)
+    ('Melius Services', 'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Coppel',          'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Hyatt',           'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Arajet',          'America/Mexico_City', '09:00', '18:00', 31, 15)
 ON DUPLICATE KEY UPDATE name = name;

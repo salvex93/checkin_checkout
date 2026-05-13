@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/mailer.php';
 
 function admin_records(): never {
     require_admin();
@@ -80,6 +81,9 @@ function admin_overtime_requests(): never {
             'record_id' => (int)$r['record_id'],
             'date' => $r['work_date'],
             'hours' => (float)$r['hours'],
+            'new_hours' => $r['new_hours'] !== null ? (float)$r['new_hours'] : null,
+            'request_type' => $r['request_type'] ?? 'new',
+            'referenced_request_id' => $r['referenced_request_id'] !== null ? (int)$r['referenced_request_id'] : null,
             'reason' => $r['reason'],
             'requested_at' => $r['requested_at']
         ];
@@ -116,15 +120,43 @@ function admin_decide(array $body): never {
         } else { // overtime
             $req = db_one('SELECT * FROM overtime_requests WHERE id = ? AND status = ?', [$id, 'pending']);
             if (!$req) { Database::pdo()->rollBack(); err('NOT_FOUND', 'Solicitud no encontrada o ya procesada.', 404); }
+
+            $isEdit = ($req['request_type'] ?? 'new') === 'edit';
+
             db_exec(
                 'UPDATE overtime_requests SET status = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?',
                 [$newStatus, $id]
             );
-            // Reflejar en el registro asociado
-            db_exec(
-                'UPDATE attendance_records SET overtime_status = ? WHERE id = ?',
-                [$newStatus, $req['record_id']]
-            );
+
+            if ($isEdit) {
+                // Edicion: solo modifica al original si aprobamos. Si rechazamos,
+                // el original queda intacto y nada cambia en attendance_records.
+                if ($decision === 'approve' && $req['referenced_request_id'] !== null && $req['new_hours'] !== null) {
+                    $original = db_one(
+                        'SELECT id, record_id, hours FROM overtime_requests WHERE id = ?',
+                        [$req['referenced_request_id']]
+                    );
+                    if ($original) {
+                        $oldHours = (float)$original['hours'];
+                        $newHours = (float)$req['new_hours'];
+                        $delta = $newHours - $oldHours;
+                        db_exec(
+                            'UPDATE overtime_requests SET hours = ? WHERE id = ?',
+                            [$newHours, $original['id']]
+                        );
+                        db_exec(
+                            'UPDATE attendance_records SET overtime_hours = overtime_hours + ? WHERE id = ?',
+                            [$delta, $original['record_id']]
+                        );
+                    }
+                }
+            } else {
+                // Solicitud nueva: reflejar status en el registro asociado.
+                db_exec(
+                    'UPDATE attendance_records SET overtime_status = ? WHERE id = ?',
+                    [$newStatus, $req['record_id']]
+                );
+            }
         }
         Database::pdo()->commit();
     } catch (Throwable $e) {
@@ -304,4 +336,83 @@ function admin_users_update(int $id, array $body): never {
         'user_id' => $id, 'company_id' => $companyId, 'status' => $status
     ]);
     ok(['message' => 'Agente actualizado.']);
+}
+
+/**
+ * POST admin/users/invite — crea cuenta con password temporal y envia email.
+ * Reemplaza el flujo publico de auth/register. super_admin puede crear admin
+ * o consultant; admin solo consultant. Anti-enumeracion: respuesta identica
+ * si el email ya existe (no crea ni envia).
+ */
+function admin_users_invite(array $body): never {
+    require_csrf();
+    $admin = require_admin();
+
+    $email = validate_email($body, 'email');
+    $name = validate_string($body, 'name', 2, 120);
+    $role = validate_string($body, 'role', 1, 20);
+    if (!in_array($role, ['consultant', 'admin'], true)) {
+        err('INVALID_INPUT', 'Rol invalido. Permitidos: consultant, admin.', 400, ['field' => 'role']);
+    }
+    if ($role === 'admin' && ($admin['role'] ?? '') !== 'super_admin') {
+        err('FORBIDDEN', 'Solo super_admin puede crear administradores.', 403);
+    }
+
+    $companyId = null;
+    if (array_key_exists('company_id', $body) && $body['company_id'] !== null && $body['company_id'] !== '') {
+        $companyId = validate_int($body, 'company_id', 1);
+        if (!db_one('SELECT id FROM companies WHERE id = ?', [$companyId])) {
+            err('INVALID_INPUT', 'Empresa no existe.', 400, ['field' => 'company_id']);
+        }
+    }
+    // Consultor obligatoriamente vinculado a una empresa.
+    if ($role === 'consultant' && $companyId === null) {
+        err('INVALID_INPUT', 'Los agentes requieren empresa asignada.', 400, ['field' => 'company_id']);
+    }
+
+    // Anti-enumeracion: si el email ya existe no creamos pero respondemos OK.
+    $existing = db_one('SELECT id FROM users WHERE email = ?', [$email]);
+    if ($existing) {
+        audit_log((int)$admin['id'], 'admin_invite_duplicate', ['email' => $email]);
+        ok(['message' => 'Invitacion enviada.']);
+    }
+
+    $tempPassword = password_temp_generate(14);
+    $hash = password_hash($tempPassword, PASSWORD_BCRYPT, ['cost' => 12]);
+
+    Database::pdo()->beginTransaction();
+    try {
+        db_exec(
+            'INSERT INTO users (email, name, password_hash, role, company_id, status, is_active, must_change_password)
+                  VALUES (?, ?, ?, ?, ?, ?, 1, 1)',
+            [$email, $name, $hash, $role, $companyId, 'active']
+        );
+        $userId = (int)db_last_id();
+
+        // Envio fuera de la transaccion: si falla SMTP no queremos romper el
+        // commit; lo hacemos justo despues. La transaccion aqui solo abarca el
+        // insert para que un fallo de BD revierta antes de mandar correo.
+        Database::pdo()->commit();
+    } catch (Throwable $e) {
+        if (Database::pdo()->inTransaction()) Database::pdo()->rollBack();
+        error_log('[admin_users_invite] insert fallo: ' . $e->getMessage());
+        err('SERVER_ERROR', 'No se pudo crear el usuario.', 500);
+    }
+
+    $loginUrl = app_base_url() . '/';
+    $tpl = mail_template_temp_password($name, $email, $tempPassword, $loginUrl);
+    $sent = mail_send($email, $tpl['subject'], $tpl['html'], $tpl['text']);
+
+    if (!$sent) {
+        // El usuario fue creado pero el correo no salio. Revertir creacion para
+        // no dejar cuenta zombi sin credenciales conocidas por el destinatario.
+        db_exec('DELETE FROM users WHERE id = ?', [$userId]);
+        audit_log((int)$admin['id'], 'admin_invite_mail_failed', ['email' => $email]);
+        err('MAIL_FAILED', 'No se pudo enviar el correo. Verifica configuracion SMTP.', 502);
+    }
+
+    audit_log((int)$admin['id'], 'admin_invite_created', [
+        'user_id' => $userId, 'email' => $email, 'role' => $role, 'company_id' => $companyId
+    ]);
+    ok(['message' => 'Invitacion enviada.', 'user_id' => $userId], 201);
 }

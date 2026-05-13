@@ -20,6 +20,7 @@ require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/records.php';
 require_once __DIR__ . '/admin.php';
+require_once __DIR__ . '/dashboard.php';
 
 // Headers de seguridad antes que nada
 emit_security_headers();
@@ -52,7 +53,7 @@ $body = in_array($method, ['POST', 'PUT', 'DELETE'], true) ? read_json_body() : 
 // Parser de paths con id: admin/companies/123 -> ('admin/companies', 123)
 $endpointBase = $endpoint;
 $endpointId = null;
-if (preg_match('#^(admin/companies|admin/users)/(\d+)$#', $endpoint, $m)) {
+if (preg_match('#^(admin/companies|admin/users|admin/dashboard/company)/(\d+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
 }
@@ -68,6 +69,8 @@ try {
                 admin_companies_delete($endpointId);
             case 'PUT admin/users':
                 admin_users_update($endpointId, $body);
+            case 'GET admin/dashboard/company':
+                admin_dashboard_company($endpointId);
             default:
                 err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
         }
@@ -79,14 +82,21 @@ try {
             ok(['csrf_token' => csrf_token()]);
 
         // --- Auth ---
+        // auth/register deprecado: alta de usuarios ahora va por admin/users/invite (#26).
         case 'POST auth/register':
-            auth_register($body);
+            err('GONE', 'El registro publico esta deshabilitado. Solicita una invitacion al administrador.', 410);
         case 'POST auth/login':
             auth_login($body);
         case 'POST auth/logout':
             auth_logout();
         case 'GET auth/me':
             auth_me();
+        case 'POST auth/change-password':
+            auth_change_password($body);
+        case 'POST auth/forgot-password':
+            auth_forgot_password($body);
+        case 'POST auth/reset-password':
+            auth_reset_password($body);
 
         // --- Companies ---
         case 'GET companies':
@@ -103,6 +113,8 @@ try {
             records_clockout();
         case 'POST records/overtime':
             records_overtime($body);
+        case 'POST records/overtime-edit-request':
+            records_overtime_edit_request($body);
         case 'POST records/change-company':
             records_change_company($body);
 
@@ -123,6 +135,16 @@ try {
             admin_companies_create($body);
         case 'GET admin/users':
             admin_users_list();
+        case 'POST admin/users/invite':
+            admin_users_invite($body);
+
+        // --- Admin: dashboards y busqueda (Fase 5) ---
+        case 'GET admin/dashboard/global':
+            admin_dashboard_global();
+        case 'GET admin/agents/search':
+            admin_agents_search();
+        case 'GET admin/records/export':
+            admin_records_export();
 
         default:
             err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);

@@ -18,6 +18,39 @@ const OVERTIME_GRACE_HOUR_AM = 6;
 const STANDARD_CLOSE_HOUR = 18;
 const OVERTIME_MAX_HOURS = 6.0;
 
+/**
+ * Resuelve horario efectivo de un agente: overrides del usuario tienen prioridad,
+ * caen a defaults de su empresa. Si el usuario es admin/super_admin sin empresa,
+ * cae a un perfil neutro (TZ del servidor, 09-18, L-V, gracia 15).
+ */
+function effective_schedule(array $user): array {
+    $companyId = isset($user['company_id']) && $user['company_id'] !== null ? (int)$user['company_id'] : null;
+    $company = $companyId ? db_one(
+        'SELECT timezone, work_start_time, work_end_time, work_days_mask, grace_minutes_late
+           FROM companies WHERE id = ?',
+        [$companyId]
+    ) : null;
+
+    return [
+        'timezone' => $user['timezone'] ?? ($company['timezone'] ?? 'America/Mexico_City'),
+        'work_start_time' => $user['work_start_time'] ?? ($company['work_start_time'] ?? '09:00'),
+        'work_end_time' => $user['work_end_time'] ?? ($company['work_end_time'] ?? '18:00'),
+        'work_days_mask' => isset($user['work_days_mask']) && $user['work_days_mask'] !== null
+            ? (int)$user['work_days_mask']
+            : (int)($company['work_days_mask'] ?? 31),
+        'grace_minutes_late' => (int)($company['grace_minutes_late'] ?? 15),
+    ];
+}
+
+/**
+ * Convierte day-of-week PHP (1=Lun..7=Dom) a bit del work_days_mask
+ * (bit 0=Lun..bit 6=Dom) y verifica que el dia este habilitado.
+ */
+function is_workday(int $dayOfWeekIso, int $mask): bool {
+    $bit = $dayOfWeekIso - 1;
+    return ($mask & (1 << $bit)) !== 0;
+}
+
 function records_companies(): never {
     require_login();
     $companies = db_all('SELECT id, name FROM companies ORDER BY name');
@@ -26,9 +59,15 @@ function records_companies(): never {
 
 function records_today(): never {
     $u = require_login();
-    $today = (new DateTimeImmutable('now'))->format('Y-m-d');
+    $sched = effective_schedule($u);
+    $tz = new DateTimeZone($sched['timezone']);
+    $today = (new DateTimeImmutable('now', $tz))->format('Y-m-d');
     $rec = db_one('SELECT * FROM attendance_records WHERE user_id = ? AND work_date = ?', [$u['id'], $today]);
-    ok(['record' => $rec ? normalize_record($rec) : null]);
+    ok([
+        'record' => $rec ? normalize_record($rec) : null,
+        'schedule' => $sched,
+        'today' => $today
+    ]);
 }
 
 function records_mine(): never {
@@ -44,17 +83,20 @@ function records_mine(): never {
 function records_clockin(array $body): never {
     require_csrf();
     $u = require_login();
-    $now = new DateTimeImmutable('now');
+    $sched = effective_schedule($u);
+    $tz = new DateTimeZone($sched['timezone']);
+    $now = new DateTimeImmutable('now', $tz);
     $today = $now->format('Y-m-d');
     $currentHour = (int)$now->format('G');
 
-    // Idempotencia: si ya hay registro de hoy con entry, error
+    // Aviso (no bloqueo) si el dia actual no esta marcado como laborable.
+    $isWorkday = is_workday((int)$now->format('N'), (int)$sched['work_days_mask']);
+
     $existing = db_one('SELECT id FROM attendance_records WHERE user_id = ? AND work_date = ?', [$u['id'], $today]);
     if ($existing) {
         err('ALREADY_CHECKED_IN', 'Ya registraste tu entrada hoy.', 409);
     }
 
-    // Buscar registro abierto de dia anterior
     $openPrior = db_one(
         'SELECT * FROM attendance_records WHERE user_id = ? AND exit_time IS NULL AND work_date < ? ORDER BY work_date DESC LIMIT 1',
         [$u['id'], $today]
@@ -66,13 +108,12 @@ function records_clockin(array $body): never {
         $overtimeReason = isset($body['overtime_reason']) ? validate_string($body, 'overtime_reason', 0, 240, false) : null;
 
         if ($currentHour < OVERTIME_GRACE_HOUR_AM && $declareOvertime === null) {
-            // Decision pendiente: el cliente debe preguntar al usuario
             ok([
                 'decision_required' => true,
                 'prior_record' => normalize_record($openPrior),
                 'rule' => [
                     'grace_hour_am' => OVERTIME_GRACE_HOUR_AM,
-                    'standard_close_hour' => STANDARD_CLOSE_HOUR,
+                    'standard_close_hour' => (int)substr($sched['work_end_time'], 0, 2),
                     'max_overtime_hours' => OVERTIME_MAX_HOURS
                 ]
             ]);
@@ -82,28 +123,44 @@ function records_clockin(array $body): never {
             if ($overtimeHours === null) {
                 err('INVALID_INPUT', 'Se requieren las horas extra a declarar.', 400, ['field' => 'overtime_hours']);
             }
-            close_record_as_overtime((int)$openPrior['id'], (int)$u['id'], $overtimeHours, $overtimeReason ?? '');
+            close_record_as_overtime((int)$openPrior['id'], (int)$u['id'], $overtimeHours, $overtimeReason ?? '', $tz);
         } else {
-            close_record_as_forgotten((int)$openPrior['id']);
+            close_record_as_forgotten((int)$openPrior['id'], $sched['work_end_time']);
         }
     }
 
-    // Crear el registro de hoy
+    $entryTime = $now->format('H:i');
+    $startMin = (int)substr($sched['work_start_time'], 0, 2) * 60 + (int)substr($sched['work_start_time'], 3, 2);
+    $entryMin = $now->format('G') * 60 + (int)$now->format('i');
+    $isLate = $entryMin > ($startMin + (int)$sched['grace_minutes_late']);
+
     db_exec(
-        'INSERT INTO attendance_records (user_id, work_date, entry_time) VALUES (?, ?, ?)',
-        [$u['id'], $today, $now->format('H:i')]
+        'INSERT INTO attendance_records (user_id, work_date, entry_time, timezone) VALUES (?, ?, ?, ?)',
+        [$u['id'], $today, $entryTime, $sched['timezone']]
     );
     $newId = (int)db_last_id();
-    audit_log((int)$u['id'], 'clockin', ['date' => $today]);
+    audit_log((int)$u['id'], 'clockin', [
+        'date' => $today, 'tz' => $sched['timezone'],
+        'is_late' => $isLate, 'is_workday' => $isWorkday
+    ]);
     $rec = db_one('SELECT * FROM attendance_records WHERE id = ?', [$newId]);
-    ok(['record' => normalize_record($rec)]);
+    ok([
+        'record' => normalize_record($rec),
+        'warnings' => [
+            'is_late' => $isLate,
+            'non_workday' => !$isWorkday,
+        ]
+    ]);
 }
 
 function records_clockout(): never {
     require_csrf();
     $u = require_login();
-    $today = (new DateTimeImmutable('now'))->format('Y-m-d');
-    $now = (new DateTimeImmutable('now'))->format('H:i');
+    $sched = effective_schedule($u);
+    $tz = new DateTimeZone($sched['timezone']);
+    $nowDt = new DateTimeImmutable('now', $tz);
+    $today = $nowDt->format('Y-m-d');
+    $now = $nowDt->format('H:i');
 
     $rec = db_one('SELECT * FROM attendance_records WHERE user_id = ? AND work_date = ?', [$u['id'], $today]);
     if (!$rec) err('NOT_CHECKED_IN', 'Debes marcar entrada primero.', 409);
@@ -113,7 +170,7 @@ function records_clockout(): never {
         'UPDATE attendance_records SET exit_time = ?, closed_reason = ? WHERE id = ?',
         [$now, 'normal', $rec['id']]
     );
-    audit_log((int)$u['id'], 'clockout', ['date' => $today]);
+    audit_log((int)$u['id'], 'clockout', ['date' => $today, 'tz' => $sched['timezone']]);
     $rec = db_one('SELECT * FROM attendance_records WHERE id = ?', [$rec['id']]);
     ok(['record' => normalize_record($rec)]);
 }
@@ -124,19 +181,55 @@ function records_overtime(array $body): never {
     $hours = validate_float($body, 'hours', 0.5, OVERTIME_MAX_HOURS);
     $reason = validate_string($body, 'reason', 0, 240, false) ?? '';
 
-    $today = (new DateTimeImmutable('now'))->format('Y-m-d');
-    $rec = db_one('SELECT * FROM attendance_records WHERE user_id = ? AND work_date = ?', [$u['id'], $today]);
-    if (!$rec) err('NOT_CHECKED_IN', 'Necesitas un registro del dia para declarar horas extra.', 409);
+    // Fecha objetivo: hoy por defecto, retroactivo hasta 7 dias, nunca futuro.
+    $today = new DateTimeImmutable('today');
+    if (isset($body['work_date']) && $body['work_date'] !== '') {
+        $rawDate = validate_string($body, 'work_date', 10, 10);
+        $target = DateTimeImmutable::createFromFormat('Y-m-d', $rawDate);
+        if (!$target || $target->format('Y-m-d') !== $rawDate) {
+            err('INVALID_INPUT', 'Fecha invalida (use YYYY-MM-DD).', 400, ['field' => 'work_date']);
+        }
+    } else {
+        $target = $today;
+    }
+    if ($target > $today) {
+        err('INVALID_INPUT', 'No puedes declarar horas extra para una fecha futura.', 400, ['field' => 'work_date']);
+    }
+    $minDate = $today->modify('-7 days');
+    if ($target < $minDate) {
+        err('INVALID_INPUT', 'Solo puedes declarar horas extra de los ultimos 7 dias.', 400, ['field' => 'work_date']);
+    }
+
+    $workDate = $target->format('Y-m-d');
+    $rec = db_one('SELECT * FROM attendance_records WHERE user_id = ? AND work_date = ?', [$u['id'], $workDate]);
+    if (!$rec) err('NO_RECORD_FOR_DATE', 'No hay jornada registrada para esa fecha.', 409, ['field' => 'work_date']);
+
+    // Una sola peticion vigente por dia: rechazar si existe pending o approved.
+    $existing = db_one(
+        "SELECT id, status FROM overtime_requests
+          WHERE user_id = ? AND record_id = ? AND status IN ('pending','approved') AND request_type = 'new'
+          ORDER BY id DESC LIMIT 1",
+        [$u['id'], $rec['id']]
+    );
+    if ($existing) {
+        $msg = $existing['status'] === 'approved'
+            ? 'Ya tienes horas extra aprobadas para esa fecha. Solicita una edicion.'
+            : 'Ya existe una peticion pendiente para esa fecha.';
+        err('OVERTIME_EXISTS', $msg, 409, ['existing_id' => (int)$existing['id'], 'existing_status' => $existing['status']]);
+    }
 
     db_exec(
-        'INSERT INTO overtime_requests (user_id, record_id, hours, reason, status) VALUES (?, ?, ?, ?, ?)',
-        [$u['id'], $rec['id'], $hours, $reason, 'pending']
+        "INSERT INTO overtime_requests (user_id, record_id, hours, reason, status, request_type)
+              VALUES (?, ?, ?, ?, 'pending', 'new')",
+        [$u['id'], $rec['id'], $hours, $reason]
     );
     db_exec(
         'UPDATE attendance_records SET overtime_hours = overtime_hours + ?, overtime_status = ? WHERE id = ?',
         [$hours, 'pending', $rec['id']]
     );
-    audit_log((int)$u['id'], 'overtime_request', ['hours' => $hours, 'record_id' => $rec['id']]);
+    audit_log((int)$u['id'], 'overtime_request', [
+        'hours' => $hours, 'record_id' => (int)$rec['id'], 'work_date' => $workDate
+    ]);
     ok(['message' => 'Horas extra enviadas a aprobacion.']);
 }
 
@@ -159,10 +252,57 @@ function records_change_company(array $body): never {
     ok(['message' => 'Solicitud enviada a aprobacion.']);
 }
 
+/**
+ * POST records/overtime-edit-request — agente solicita modificar el monto
+ * de una solicitud aprobada. Mientras la edicion esta pending, el valor
+ * approved original sigue contando en reportes. Una sola edicion vigente
+ * por overtime original.
+ */
+function records_overtime_edit_request(array $body): never {
+    require_csrf();
+    $u = require_login();
+
+    $refId = validate_int($body, 'overtime_request_id', 1);
+    $newHours = validate_float($body, 'new_hours', 0.5, OVERTIME_MAX_HOURS);
+    $reason = validate_string($body, 'reason', 0, 240, false) ?? '';
+
+    $original = db_one(
+        "SELECT * FROM overtime_requests
+          WHERE id = ? AND user_id = ? AND status = 'approved' AND request_type = 'new'",
+        [$refId, $u['id']]
+    );
+    if (!$original) {
+        err('NOT_FOUND', 'No existe una solicitud aprobada con ese id para tu usuario.', 404, ['field' => 'overtime_request_id']);
+    }
+    if (abs((float)$original['hours'] - $newHours) < 0.01) {
+        err('INVALID_INPUT', 'El nuevo monto debe diferir del actual.', 400, ['field' => 'new_hours']);
+    }
+
+    // No permitir doble edicion pending sobre la misma solicitud.
+    $pending = db_one(
+        "SELECT id FROM overtime_requests
+          WHERE referenced_request_id = ? AND status = 'pending' AND request_type = 'edit'",
+        [$refId]
+    );
+    if ($pending) {
+        err('OVERTIME_EDIT_EXISTS', 'Ya tienes una edicion pendiente para esa solicitud.', 409, ['existing_id' => (int)$pending['id']]);
+    }
+
+    db_exec(
+        "INSERT INTO overtime_requests (user_id, record_id, hours, new_hours, reason, status, request_type, referenced_request_id)
+              VALUES (?, ?, ?, ?, ?, 'pending', 'edit', ?)",
+        [$u['id'], $original['record_id'], $original['hours'], $newHours, $reason, $refId]
+    );
+    audit_log((int)$u['id'], 'overtime_edit_request', [
+        'reference_id' => $refId, 'old_hours' => (float)$original['hours'], 'new_hours' => $newHours
+    ]);
+    ok(['message' => 'Edicion enviada a aprobacion.']);
+}
+
 // === Helpers internos ===
 
-function close_record_as_forgotten(int $recordId): void {
-    $exitTime = sprintf('%02d:00', STANDARD_CLOSE_HOUR);
+function close_record_as_forgotten(int $recordId, string $workEndTime = '18:00'): void {
+    $exitTime = substr($workEndTime, 0, 5);
     db_exec(
         'UPDATE attendance_records SET exit_time = ?, closed_reason = ? WHERE id = ?',
         [$exitTime, 'forgotten', $recordId]
@@ -170,15 +310,16 @@ function close_record_as_forgotten(int $recordId): void {
     audit_log(null, 'autoclose_forgotten', ['record_id' => $recordId, 'exit_time' => $exitTime]);
 }
 
-function close_record_as_overtime(int $recordId, int $userId, float $hours, string $reason): void {
-    $exitTime = (new DateTimeImmutable('now'))->format('H:i');
+function close_record_as_overtime(int $recordId, int $userId, float $hours, string $reason, ?DateTimeZone $tz = null): void {
+    $exitTime = (new DateTimeImmutable('now', $tz))->format('H:i');
     db_exec(
         'UPDATE attendance_records SET exit_time = ?, closed_reason = ?, overtime_hours = ?, overtime_status = ? WHERE id = ?',
         [$exitTime, 'overtime', $hours, 'pending', $recordId]
     );
     db_exec(
-        'INSERT INTO overtime_requests (user_id, record_id, hours, reason, status) VALUES (?, ?, ?, ?, ?)',
-        [$userId, $recordId, $hours, $reason, 'pending']
+        "INSERT INTO overtime_requests (user_id, record_id, hours, reason, status, request_type)
+              VALUES (?, ?, ?, ?, 'pending', 'new')",
+        [$userId, $recordId, $hours, $reason]
     );
     audit_log($userId, 'autoclose_overtime', ['record_id' => $recordId, 'hours' => $hours]);
 }
@@ -190,6 +331,7 @@ function normalize_record(array $r): array {
         'work_date' => $r['work_date'],
         'entry_time' => $r['entry_time'],
         'exit_time' => $r['exit_time'],
+        'timezone' => $r['timezone'] ?? null,
         'closed_reason' => $r['closed_reason'],
         'overtime_hours' => (float)$r['overtime_hours'],
         'overtime_status' => $r['overtime_status']

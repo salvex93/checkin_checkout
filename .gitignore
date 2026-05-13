@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# Herramientas internas del entorno de desarrollo (no se publican)
+.claude/
+!.claude/.gitkeep
+
 # Base de datos local SQLite
 storage/
 *.db

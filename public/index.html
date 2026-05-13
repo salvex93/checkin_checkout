@@ -264,7 +264,9 @@
 
         const App = () => {
             const { push: toast } = useToast();
-            const [view, setView] = useState('loading');     // loading | login | register | admin-login | dashboard | admin-panel
+            // loading | login | forgot-password | reset-password | change-password | dashboard | admin-panel
+            const [view, setView] = useState('loading');
+            const [resetToken, setResetToken] = useState(null);
             const [currentUser, setCurrentUser] = useState(null);
             const [theme, setTheme] = useState(() => (document.documentElement.classList.contains('dark') ? 'dark' : 'light'));
             const [companies, setCompanies] = useState([]);
@@ -279,16 +281,27 @@
                 });
             }, []);
 
-            // Hidratacion: pedir CSRF y luego /auth/me
+            // Hidratacion: si la URL trae reset_token vamos directo a esa vista.
             useEffect(() => {
+                const url = new URL(window.location.href);
+                const tok = url.searchParams.get('reset_token');
                 (async () => {
                     try {
                         await fetchCsrf();
+                        if (tok && /^[a-f0-9]{64}$/.test(tok)) {
+                            setResetToken(tok);
+                            setView('reset-password');
+                            return;
+                        }
                         try {
                             const me = await apiFetch('auth/me');
                             CSRF_TOKEN = me.csrf_token || CSRF_TOKEN;
                             setCurrentUser(me.user);
-                            setView(me.user.role === 'admin' ? 'admin-panel' : 'dashboard');
+                            if (me.user.must_change_password) {
+                                setView('change-password');
+                            } else {
+                                setView((me.user.role === 'admin' || me.user.role === 'super_admin') ? 'admin-panel' : 'dashboard');
+                            }
                         } catch (e) {
                             if (e._auth) setView('login'); else { toast('error', e.message); setView('login'); }
                         }
@@ -319,32 +332,14 @@
                     });
                     CSRF_TOKEN = d.csrf_token || CSRF_TOKEN;
                     setCurrentUser(d.user);
-                    setView(d.user.role === 'admin' ? 'admin-panel' : 'dashboard');
+                    if (d.user.must_change_password) {
+                        setView('change-password');
+                    } else {
+                        setView((d.user.role === 'admin' || d.user.role === 'super_admin') ? 'admin-panel' : 'dashboard');
+                    }
                     toast('success', `Bienvenido, ${d.user.name}`);
                 } catch (err) {
                     toast('error', err.message || 'No se pudo iniciar sesion.');
-                } finally { setSubmitting(false); }
-            };
-
-            const handleRegister = async (e) => {
-                e.preventDefault();
-                if (submitting) return;
-                const data = new FormData(e.target);
-                setSubmitting(true);
-                try {
-                    await apiFetch('auth/register', {
-                        method: 'POST',
-                        body: {
-                            name: data.get('name'),
-                            email: data.get('email'),
-                            password: data.get('password'),
-                            company_id: parseInt(data.get('company_id'), 10)
-                        }
-                    });
-                    toast('success', 'Registro recibido. Ya puedes iniciar sesion.');
-                    setView('login');
-                } catch (err) {
-                    toast('error', err.message || 'No se pudo completar el registro.');
                 } finally { setSubmitting(false); }
             };
 
@@ -366,18 +361,46 @@
                         <LoginCard
                             onSubmit={handleLogin}
                             submitting={submitting}
-                            onGoRegister={() => { loadCompanies(); setView('register'); }}
+                            onGoForgot={() => setView('forgot-password')}
                             theme={theme}
                             onToggleTheme={toggleTheme}
                         />
                     )}
 
-                    {view === 'register' && (
-                        <RegisterCard
-                            companies={companies}
-                            onSubmit={handleRegister}
-                            submitting={submitting}
+                    {view === 'forgot-password' && (
+                        <ForgotPasswordCard
                             onBack={() => setView('login')}
+                            theme={theme}
+                            onToggleTheme={toggleTheme}
+                        />
+                    )}
+
+                    {view === 'reset-password' && (
+                        <ResetPasswordCard
+                            token={resetToken}
+                            onDone={() => {
+                                // Limpia el query param y vuelve a login.
+                                window.history.replaceState({}, '', window.location.pathname);
+                                setResetToken(null);
+                                setView('login');
+                            }}
+                            theme={theme}
+                            onToggleTheme={toggleTheme}
+                        />
+                    )}
+
+                    {view === 'change-password' && currentUser && (
+                        <ChangePasswordCard
+                            currentUser={currentUser}
+                            onDone={async () => {
+                                try {
+                                    const me = await apiFetch('auth/me');
+                                    CSRF_TOKEN = me.csrf_token || CSRF_TOKEN;
+                                    setCurrentUser(me.user);
+                                    setView((me.user.role === 'admin' || me.user.role === 'super_admin') ? 'admin-panel' : 'dashboard');
+                                } catch (_) { setView('login'); }
+                            }}
+                            onLogout={handleLogout}
                             theme={theme}
                             onToggleTheme={toggleTheme}
                         />
@@ -414,7 +437,7 @@
         // Vistas
         // =====================================================================
 
-        const LoginCard = ({ onSubmit, submitting, onGoRegister, theme, onToggleTheme }) => (
+        const LoginCard = ({ onSubmit, submitting, onGoForgot, theme, onToggleTheme }) => (
             <div className="max-w-md w-full bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-12 rounded-[2rem] sm:rounded-[3rem] md:rounded-[4rem] shadow-2xl dark:shadow-black/50 border border-slate-100 dark:border-slate-800 flex flex-col items-center anim-zoom-in relative">
                 <div className="absolute top-4 right-4 sm:top-6 sm:right-6"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
                 <div className="bg-blue-600 w-16 h-16 sm:w-24 sm:h-24 rounded-2xl sm:rounded-[2rem] flex items-center justify-center mb-6 sm:mb-8 shadow-2xl shadow-blue-200 dark:shadow-blue-900/40">
@@ -442,50 +465,186 @@
                 </form>
 
                 <div className="mt-8 sm:mt-12 flex flex-col items-center gap-4 sm:gap-5">
-                    <button onClick={onGoRegister} className="text-blue-600 dark:text-blue-300 font-black text-xs uppercase tracking-widest hover:underline transition-all">
-                        Registrar nuevo consultor
+                    <button onClick={onGoForgot} className="text-blue-600 dark:text-blue-300 font-black text-xs uppercase tracking-widest hover:underline transition-all">
+                        Olvide mi contrasena
                     </button>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold text-center max-w-xs">
+                        El alta de cuentas es exclusiva del administrador. Solicita una invitacion para acceder.
+                    </p>
                 </div>
             </div>
         );
 
-        const RegisterCard = ({ companies, onSubmit, submitting, onBack, theme, onToggleTheme }) => (
+        // Carcasa visual reutilizable para las vistas de password.
+        const PasswordCard = ({ title, subtitle, children, theme, onToggleTheme }) => (
             <div className="max-w-md w-full bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-12 rounded-[2rem] sm:rounded-[3rem] shadow-2xl dark:shadow-black/50 border border-slate-100 dark:border-slate-800 anim-fade-in relative">
-                <div className="absolute top-4 right-4 sm:top-6 sm:right-6"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
-                <h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 mb-8 sm:mb-10 tracking-tight">Alta de Consultor</h2>
-                <form onSubmit={onSubmit} className="space-y-4 sm:space-y-5">
-                    <div className="space-y-1">
-                        <label htmlFor="reg-name" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Nombre Completo</label>
-                        <input id="reg-name" name="name" required minLength="2" maxLength="120" autoComplete="name"
-                            className="w-full px-6 sm:px-7 py-4 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-slate-900 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
-                    </div>
-                    <div className="space-y-1">
-                        <label htmlFor="reg-email" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Email Corporativo</label>
-                        <input id="reg-email" name="email" type="email" required autoComplete="email"
-                            className="w-full px-6 sm:px-7 py-4 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-slate-900 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
-                    </div>
-                    <div className="space-y-1">
-                        <label htmlFor="reg-password" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Contraseña (min 10 caracteres)</label>
-                        <input id="reg-password" name="password" type="password" required minLength="10" maxLength="200" autoComplete="new-password"
-                            className="w-full px-6 sm:px-7 py-4 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-slate-900 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
-                    </div>
-                    <div className="space-y-1">
-                        <label htmlFor="reg-company" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Empresa Asignada</label>
-                        <select id="reg-company" name="company_id" required
-                            className="w-full px-6 sm:px-7 py-4 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none font-bold appearance-none cursor-pointer">
-                            <option value="">— Selecciona empresa —</option>
-                            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                    </div>
-                    <button type="submit" disabled={submitting}
-                        className="w-full bg-slate-900 dark:bg-blue-600 text-white py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black mt-6 hover:bg-black dark:hover:bg-blue-700 transition-all shadow-xl active:scale-95 disabled:opacity-60 flex items-center justify-center gap-3">
-                        {submitting && <Icon name="Spinner" size={20} />}
-                        {submitting ? 'Registrando' : 'Completar Registro'}
-                    </button>
-                    <button type="button" onClick={onBack} className="w-full py-2 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-widest">Cancelar</button>
-                </form>
+                {onToggleTheme && (
+                    <div className="absolute top-4 right-4 sm:top-6 sm:right-6"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
+                )}
+                <div className="bg-blue-600 w-14 h-14 rounded-2xl flex items-center justify-center mb-6 text-white">
+                    <Icon name="Lock" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tight">{title}</h2>
+                {subtitle && <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{subtitle}</p>}
+                {children}
             </div>
         );
+
+        // Medidor de fuerza basico (min 10, mayusc, numero, simbolo).
+        const PasswordStrength = ({ value }) => {
+            const checks = [
+                { ok: (value || '').length >= 10, label: 'Min 10 caracteres' },
+                { ok: /[A-Z]/.test(value || ''), label: 'Mayuscula' },
+                { ok: /[0-9]/.test(value || ''), label: 'Numero' },
+                { ok: /[^A-Za-z0-9]/.test(value || ''), label: 'Simbolo' }
+            ];
+            return (
+                <ul className="text-[11px] text-slate-500 dark:text-slate-400 grid grid-cols-2 gap-1">
+                    {checks.map((c, i) => (
+                        <li key={i} className={c.ok ? 'text-emerald-600 dark:text-emerald-300 font-bold' : ''}>
+                            {c.ok ? '✓' : '·'} {c.label}
+                        </li>
+                    ))}
+                </ul>
+            );
+        };
+
+        const PasswordInputs = ({ newPwd, setNewPwd, confirmPwd, setConfirmPwd, autoComplete = 'new-password' }) => (
+            <>
+                <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Nueva contrasena</label>
+                    <input type="password" required minLength="10" maxLength="200" autoComplete={autoComplete}
+                        value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
+                        className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-medium" />
+                </div>
+                <PasswordStrength value={newPwd} />
+                <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Confirmar contrasena</label>
+                    <input type="password" required minLength="10" maxLength="200" autoComplete={autoComplete}
+                        value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
+                        className={`w-full px-6 py-4 rounded-2xl border-2 ${confirmPwd && confirmPwd !== newPwd ? 'border-red-400' : 'border-slate-100 dark:border-slate-700'} bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-medium`} />
+                </div>
+            </>
+        );
+
+        const ForgotPasswordCard = ({ onBack, theme, onToggleTheme }) => {
+            const { push: toast } = useToast();
+            const [email, setEmail] = useState('');
+            const [submitting, setSubmitting] = useState(false);
+            const [sent, setSent] = useState(false);
+            const handle = async (e) => {
+                e.preventDefault();
+                if (submitting) return;
+                setSubmitting(true);
+                try {
+                    const d = await apiFetch('auth/forgot-password', { method: 'POST', body: { email } });
+                    toast('success', d.message);
+                    setSent(true);
+                } catch (err) { toast('error', err.message); }
+                finally { setSubmitting(false); }
+            };
+            return (
+                <PasswordCard title="Restablecer contrasena" subtitle="Te enviaremos un enlace de recuperacion si el correo esta registrado." theme={theme} onToggleTheme={onToggleTheme}>
+                    {sent ? (
+                        <div className="space-y-5">
+                            <p className="text-sm text-emerald-600 dark:text-emerald-300 font-bold">Revisa tu correo. El enlace expira en 72 horas.</p>
+                            <button onClick={onBack} className="w-full py-3 rounded-2xl font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200">Volver al inicio de sesion</button>
+                        </div>
+                    ) : (
+                        <form onSubmit={handle} className="space-y-5">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Correo</label>
+                                <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                                    className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-medium" />
+                            </div>
+                            <button type="submit" disabled={submitting}
+                                className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 dark:shadow-blue-900/40 disabled:opacity-60 flex items-center justify-center gap-2">
+                                {submitting && <Icon name="Spinner" size={18} />}
+                                Enviar enlace
+                            </button>
+                            <button type="button" onClick={onBack} className="w-full py-2 text-slate-400 font-bold text-xs uppercase tracking-widest">Cancelar</button>
+                        </form>
+                    )}
+                </PasswordCard>
+            );
+        };
+
+        const ResetPasswordCard = ({ token, onDone, theme, onToggleTheme }) => {
+            const { push: toast } = useToast();
+            const [newPwd, setNewPwd] = useState('');
+            const [confirmPwd, setConfirmPwd] = useState('');
+            const [submitting, setSubmitting] = useState(false);
+            const handle = async (e) => {
+                e.preventDefault();
+                if (submitting) return;
+                if (newPwd !== confirmPwd) { toast('error', 'Las contrasenas no coinciden.'); return; }
+                setSubmitting(true);
+                try {
+                    await apiFetch('auth/reset-password', { method: 'POST', body: { token, new_password: newPwd, confirm_password: confirmPwd } });
+                    toast('success', 'Contrasena restablecida. Inicia sesion.');
+                    onDone();
+                } catch (err) { toast('error', err.message); }
+                finally { setSubmitting(false); }
+            };
+            return (
+                <PasswordCard title="Nueva contrasena" subtitle="Define una contrasena segura para tu cuenta." theme={theme} onToggleTheme={onToggleTheme}>
+                    <form onSubmit={handle} className="space-y-5">
+                        <PasswordInputs newPwd={newPwd} setNewPwd={setNewPwd} confirmPwd={confirmPwd} setConfirmPwd={setConfirmPwd} />
+                        <button type="submit" disabled={submitting || newPwd !== confirmPwd}
+                            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 dark:shadow-blue-900/40 disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Restablecer
+                        </button>
+                    </form>
+                </PasswordCard>
+            );
+        };
+
+        const ChangePasswordCard = ({ currentUser, onDone, onLogout, theme, onToggleTheme }) => {
+            const { push: toast } = useToast();
+            const [currentPwd, setCurrentPwd] = useState('');
+            const [newPwd, setNewPwd] = useState('');
+            const [confirmPwd, setConfirmPwd] = useState('');
+            const [submitting, setSubmitting] = useState(false);
+            const handle = async (e) => {
+                e.preventDefault();
+                if (submitting) return;
+                if (newPwd !== confirmPwd) { toast('error', 'Las contrasenas no coinciden.'); return; }
+                setSubmitting(true);
+                try {
+                    await apiFetch('auth/change-password', { method: 'POST', body: {
+                        current_password: currentPwd, new_password: newPwd, confirm_password: confirmPwd
+                    }});
+                    toast('success', 'Contrasena actualizada.');
+                    onDone();
+                } catch (err) { toast('error', err.message); }
+                finally { setSubmitting(false); }
+            };
+            return (
+                <PasswordCard
+                    title="Debes cambiar tu contrasena"
+                    subtitle={`Hola ${currentUser.name}, por seguridad define una contrasena nueva antes de continuar.`}
+                    theme={theme}
+                    onToggleTheme={onToggleTheme}
+                >
+                    <form onSubmit={handle} className="space-y-5">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Contrasena actual (temporal)</label>
+                            <input type="password" required minLength="1" maxLength="200" autoComplete="current-password"
+                                value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
+                                className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-medium" />
+                        </div>
+                        <PasswordInputs newPwd={newPwd} setNewPwd={setNewPwd} confirmPwd={confirmPwd} setConfirmPwd={setConfirmPwd} />
+                        <button type="submit" disabled={submitting || newPwd !== confirmPwd}
+                            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 dark:shadow-blue-900/40 disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Guardar nueva contrasena
+                        </button>
+                        <button type="button" onClick={onLogout} className="w-full py-2 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-widest">Cerrar sesion</button>
+                    </form>
+                </PasswordCard>
+            );
+        };
 
         // =====================================================================
         // Dashboard de usuario
@@ -821,160 +980,676 @@
 
         const AdminPanel = ({ currentUser, onLogout, theme, onToggleTheme }) => {
             const { push: toast } = useToast();
-            const [activeTab, setActiveTab] = useState('logs');
-            const [records, setRecords] = useState([]);
-            const [changeReqs, setChangeReqs] = useState([]);
-            const [otReqs, setOtReqs] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState(null);
+            const isSuper = currentUser.role === 'super_admin';
+            const tabs = [
+                { id: 'dashboard', label: 'Dashboard' },
+                { id: 'records', label: 'Registros' },
+                { id: 'companies', label: 'Empresas' },
+                { id: 'agents', label: 'Agentes' },
+                { id: 'changes', label: 'Cambios' },
+                { id: 'overtime', label: 'Extras' },
+                ...(isSuper ? [{ id: 'admins', label: 'Admins' }] : []),
+            ];
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [counts, setCounts] = useState({ changes: 0, overtime: 0 });
 
-            const refresh = useCallback(async () => {
-                setLoading(true); setError(null);
+            const refreshCounts = useCallback(async () => {
                 try {
-                    const [r, cr, ot] = await Promise.all([
-                        apiFetch('admin/records'),
+                    const [cr, ot] = await Promise.all([
                         apiFetch('admin/change-requests'),
                         apiFetch('admin/overtime-requests')
                     ]);
-                    setRecords(r.records);
-                    setChangeReqs(cr.requests);
-                    setOtReqs(ot.requests);
-                } catch (e) { setError(e.message); }
-                finally { setLoading(false); }
+                    setCounts({ changes: (cr.requests || []).length, overtime: (ot.requests || []).length });
+                } catch (_) {}
             }, []);
-
-            useEffect(() => { refresh(); }, [refresh]);
-
-            const decide = async (type, id, decision) => {
-                try {
-                    await apiFetch('admin/decide', { method: 'POST', body: { type, id, decision } });
-                    toast('success', `Solicitud ${decision === 'approve' ? 'aprobada' : 'rechazada'}.`);
-                    refresh();
-                } catch (e) { toast('error', e.message); }
-            };
-
-            const pendingChange = changeReqs.length;
-            const pendingOt = otReqs.length;
+            useEffect(() => { refreshCounts(); }, [refreshCounts]);
 
             return (
                 <div className="max-w-6xl w-full flex flex-col gap-4 sm:gap-6">
-                    {/* Header */}
                     <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 gap-4">
                         <div className="flex items-center gap-3 sm:gap-4">
                             <div className="bg-slate-900 dark:bg-blue-600 p-3 rounded-2xl text-white"><Icon name="ShieldCheck" /></div>
                             <div>
                                 <h2 className="font-black text-lg sm:text-xl text-slate-800 dark:text-slate-100">Melius Admin Console</h2>
-                                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest">Gestion de Consultores</p>
+                                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest">{isSuper ? 'Super administrador' : 'Administrador'} · {currentUser.name}</p>
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-2 items-center justify-end">
-                            <button onClick={() => setActiveTab('logs')} className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'logs' ? 'bg-slate-900 dark:bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}>Registros</button>
-                            <button onClick={() => setActiveTab('changes')} className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'changes' ? 'bg-slate-900 dark:bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}>
-                                Cambios {pendingChange > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
-                            </button>
-                            <button onClick={() => setActiveTab('overtime')} className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'overtime' ? 'bg-slate-900 dark:bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}>
-                                Extras {pendingOt > 0 && <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />}
-                            </button>
+                            {tabs.map(t => (
+                                <button key={t.id} onClick={() => setActiveTab(t.id)}
+                                    className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all ${activeTab === t.id ? 'bg-slate-900 dark:bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}>
+                                    {t.label}
+                                    {t.id === 'changes' && counts.changes > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                                    {t.id === 'overtime' && counts.overtime > 0 && <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />}
+                                </button>
+                            ))}
                             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
                             <button onClick={onLogout} className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-300">Salir</button>
                         </div>
                     </div>
 
-                    {loading && <LoadingScreen />}
-                    {error && !loading && <ErrorState message={error} onRetry={refresh} />}
+                    {activeTab === 'dashboard' && <DashboardTab />}
+                    {activeTab === 'records' && <RecordsTab isSuper={isSuper} />}
+                    {activeTab === 'companies' && <CompaniesTab isSuper={isSuper} />}
+                    {activeTab === 'agents' && <AgentsTab isSuper={isSuper} />}
+                    {activeTab === 'changes' && <ChangesTab onChange={refreshCounts} />}
+                    {activeTab === 'overtime' && <OvertimeTab onChange={refreshCounts} />}
+                    {activeTab === 'admins' && isSuper && <AdminsTab />}
+                </div>
+            );
+        };
 
-                    {!loading && !error && activeTab === 'logs' && (
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
-                            <div className="p-4 sm:p-6 border-b dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-                                <h3 className="font-bold flex items-center gap-2 uppercase text-xs tracking-widest text-slate-500 dark:text-slate-400">
-                                    <Icon name="FileText" className="text-blue-600 dark:text-blue-400 w-4 h-4" /> Jornadas Laborales
-                                </h3>
-                            </div>
+        // === Tabs =============================================================
 
-                            {/* Vista tabla en desktop, cards en mobile (responsive critico) */}
-                            <div className="hidden md:block overflow-x-auto custom-scrollbar">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-[10px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-wider border-b dark:border-slate-800">
-                                        <tr>
-                                            <th className="px-6 py-4">Consultor</th>
-                                            <th className="px-6 py-4">Empresa</th>
-                                            <th className="px-6 py-4">Fecha</th>
-                                            <th className="px-6 py-4">Entrada</th>
-                                            <th className="px-6 py-4">Salida</th>
-                                            <th className="px-6 py-4">Extras</th>
-                                            <th className="px-6 py-4">Estado</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y dark:divide-slate-800 text-sm">
-                                        {records.map(rec => <AdminRecordRow key={rec.id} rec={rec} />)}
-                                        {records.length === 0 && <tr><td colSpan="7" className="px-6 py-20 text-center text-slate-300 dark:text-slate-600 italic">Sin registros aun</td></tr>}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div className="md:hidden divide-y dark:divide-slate-800">
-                                {records.map(rec => <AdminRecordCard key={rec.id} rec={rec} />)}
-                                {records.length === 0 && <EmptyState message="Sin registros aun" />}
+        const Kpi = ({ label, value }) => (
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                <p className="font-black text-2xl sm:text-3xl text-slate-800 dark:text-slate-100 mt-1">{value}</p>
+            </div>
+        );
+
+        const DashboardTab = () => {
+            const { push: toast } = useToast();
+            const [data, setData] = useState(null);
+            const [companyId, setCompanyId] = useState('');
+            const [companies, setCompanies] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try {
+                    const cs = await apiFetch('admin/companies');
+                    setCompanies(cs.companies || []);
+                    const d = companyId
+                        ? await apiFetch(`admin/dashboard/company/${companyId}`)
+                        : await apiFetch('admin/dashboard/global');
+                    setData(d.dashboard);
+                } catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, [companyId]);
+            useEffect(() => { load(); }, [load]);
+
+            if (loading) return <LoadingScreen />;
+            if (error) return <ErrorState message={error} onRetry={load} />;
+            const t = data?.totals || {};
+            return (
+                <div className="space-y-4 sm:space-y-6">
+                    <div className="flex flex-wrap gap-3 items-end justify-between">
+                        <div className="flex flex-col">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-1">Empresa</label>
+                            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}
+                                className="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 font-bold text-sm">
+                                <option value="">Todas</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <Kpi label="Registros hoy" value={t.records_today ?? 0} />
+                        <Kpi label="Registros semana" value={t.records_week ?? 0} />
+                        <Kpi label="Registros mes" value={t.records_month ?? 0} />
+                        <Kpi label="Agentes activos" value={t.active_users ?? 0} />
+                        <Kpi label="Retrasos del mes" value={t.late_month ?? 0} />
+                        <Kpi label="Ausencias del mes" value={t.absences_month ?? 0} />
+                        <Kpi label="Extras pendientes (h)" value={(t.overtime_pending_hours ?? 0).toFixed(1)} />
+                        <Kpi label="Extras aprobadas (h)" value={(t.overtime_approved_hours ?? 0).toFixed(1)} />
+                    </div>
+                    {data?.by_company?.length > 0 && (
+                        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
+                            <h3 className="font-black uppercase tracking-widest text-xs text-slate-500 mb-3">Agentes activos por empresa</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {data.by_company.map(b => (
+                                    <div key={b.company_id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 px-3 py-2 rounded-xl">
+                                        <span className="font-bold text-sm text-slate-700 dark:text-slate-200 truncate">{b.company_name}</span>
+                                        <span className="font-mono font-black text-blue-600 dark:text-blue-300">{b.active_users}</span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}
+                </div>
+            );
+        };
 
-                    {!loading && !error && activeTab === 'changes' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                            {changeReqs.map(req => (
-                                <div key={req.id} className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-4 anim-zoom-in">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h4 className="font-bold text-base sm:text-lg text-slate-800 dark:text-slate-100">{req.user_name}</h4>
-                                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">Cambio de empresa</p>
-                                        </div>
-                                        <div className="bg-blue-50 dark:bg-blue-900/40 p-2 rounded-xl text-blue-500 dark:text-blue-300"><Icon name="Mail" size={18} /></div>
+        const RecordsTab = ({ isSuper }) => {
+            const [records, setRecords] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [period, setPeriod] = useState('month');
+            const [companyId, setCompanyId] = useState('');
+            const [companies, setCompanies] = useState([]);
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try {
+                    const r = await apiFetch('admin/records');
+                    setRecords(r.records || []);
+                    if (companies.length === 0) {
+                        const cs = await apiFetch('admin/companies');
+                        setCompanies(cs.companies || []);
+                    }
+                } catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, [companies.length]);
+            useEffect(() => { load(); }, [load]);
+
+            const exportCsv = () => {
+                const qs = new URLSearchParams({ period });
+                if (companyId) qs.set('company_id', companyId);
+                window.location.href = `/api/admin/records/export?${qs.toString()}`;
+            };
+
+            if (loading) return <LoadingScreen />;
+            if (error) return <ErrorState message={error} onRetry={load} />;
+            return (
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-end gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                        <div className="flex flex-col">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-1">Periodo</label>
+                            <select value={period} onChange={(e) => setPeriod(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                                <option value="week">Esta semana</option>
+                                <option value="month">Este mes</option>
+                                <option value="year">Este año</option>
+                            </select>
+                        </div>
+                        {isSuper && (
+                            <div className="flex flex-col">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-1">Empresa</label>
+                                <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                                    <option value="">Todas</option>
+                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                        )}
+                        <button onClick={exportCsv} className="ml-auto px-4 py-2 rounded-xl bg-emerald-500 text-white font-bold text-sm hover:bg-emerald-600 transition-colors">
+                            Exportar CSV
+                        </button>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
+                        <div className="hidden md:block overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 dark:bg-slate-800/60 text-[10px] uppercase font-black text-slate-400 tracking-wider border-b dark:border-slate-800">
+                                    <tr>
+                                        <th className="px-6 py-4">Consultor</th>
+                                        <th className="px-6 py-4">Empresa</th>
+                                        <th className="px-6 py-4">Fecha</th>
+                                        <th className="px-6 py-4">Entrada</th>
+                                        <th className="px-6 py-4">Salida</th>
+                                        <th className="px-6 py-4">Extras</th>
+                                        <th className="px-6 py-4">Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y dark:divide-slate-800 text-sm">
+                                    {records.map(rec => <AdminRecordRow key={rec.id} rec={rec} />)}
+                                    {records.length === 0 && <tr><td colSpan="7" className="px-6 py-20 text-center text-slate-300 italic">Sin registros aun</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="md:hidden divide-y dark:divide-slate-800">
+                            {records.map(rec => <AdminRecordCard key={rec.id} rec={rec} />)}
+                            {records.length === 0 && <EmptyState message="Sin registros aun" />}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const CompanyForm = ({ initial, onSave, onCancel }) => {
+            const [form, setForm] = useState(() => ({
+                name: initial?.name || '',
+                timezone: initial?.timezone || 'America/Mexico_City',
+                work_start_time: initial?.work_start_time || '09:00',
+                work_end_time: initial?.work_end_time || '18:00',
+                work_days_mask: initial?.work_days_mask || 31,
+                grace_minutes_late: initial?.grace_minutes_late ?? 15,
+            }));
+            const [submitting, setSubmitting] = useState(false);
+            const dayBits = [
+                { bit: 1, label: 'L' }, { bit: 2, label: 'M' }, { bit: 4, label: 'X' },
+                { bit: 8, label: 'J' }, { bit: 16, label: 'V' }, { bit: 32, label: 'S' }, { bit: 64, label: 'D' },
+            ];
+            const toggleDay = (bit) => setForm(f => ({ ...f, work_days_mask: (f.work_days_mask & bit) ? (f.work_days_mask & ~bit) : (f.work_days_mask | bit) }));
+            const submit = async (e) => {
+                e.preventDefault();
+                setSubmitting(true);
+                try { await onSave({ ...form, work_days_mask: parseInt(form.work_days_mask, 10), grace_minutes_late: parseInt(form.grace_minutes_late, 10) }); }
+                finally { setSubmitting(false); }
+            };
+            return (
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre</span>
+                            <input required maxLength="100" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Zona horaria (IANA)</span>
+                            <input required value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-sm" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Entrada (HH:MM)</span>
+                            <input required pattern="^[0-2][0-9]:[0-5][0-9]$" value={form.work_start_time} onChange={(e) => setForm({ ...form, work_start_time: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Salida (HH:MM)</span>
+                            <input required pattern="^[0-2][0-9]:[0-5][0-9]$" value={form.work_end_time} onChange={(e) => setForm({ ...form, work_end_time: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tolerancia tarde (min)</span>
+                            <input type="number" min="0" max="60" value={form.grace_minutes_late} onChange={(e) => setForm({ ...form, grace_minutes_late: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono" />
+                        </label>
+                    </div>
+                    <div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Dias laborales</span>
+                        <div className="flex gap-2">
+                            {dayBits.map(d => (
+                                <button type="button" key={d.bit} onClick={() => toggleDay(d.bit)}
+                                    className={`w-10 h-10 rounded-xl font-black text-sm ${form.work_days_mask & d.bit ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+                                    {d.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                        <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cancelar</button>
+                        <button type="submit" disabled={submitting} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Guardar
+                        </button>
+                    </div>
+                </form>
+            );
+        };
+
+        const CompaniesTab = ({ isSuper }) => {
+            const { push: toast } = useToast();
+            const [rows, setRows] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [editing, setEditing] = useState(null);
+            const [creating, setCreating] = useState(false);
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try { const d = await apiFetch('admin/companies'); setRows(d.companies || []); }
+                catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, []);
+            useEffect(() => { load(); }, [load]);
+
+            const save = async (body) => {
+                try {
+                    if (editing) {
+                        await apiFetch(`admin/companies/${editing.id}`, { method: 'PUT', body });
+                        toast('success', 'Empresa actualizada.');
+                    } else {
+                        await apiFetch('admin/companies', { method: 'POST', body });
+                        toast('success', 'Empresa creada.');
+                    }
+                    setEditing(null); setCreating(false); load();
+                } catch (e) { toast('error', e.message); }
+            };
+            const remove = async (c) => {
+                if (!confirm(`Eliminar empresa "${c.name}"?`)) return;
+                try { await apiFetch(`admin/companies/${c.id}`, { method: 'DELETE' }); toast('success', 'Empresa eliminada.'); load(); }
+                catch (e) { toast('error', e.message); }
+            };
+            if (loading) return <LoadingScreen />;
+            if (error) return <ErrorState message={error} onRetry={load} />;
+            return (
+                <div className="space-y-4">
+                    <div className="flex justify-end">
+                        {isSuper && (
+                            <button onClick={() => setCreating(true)} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700">+ Nueva empresa</button>
+                        )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {rows.map(c => (
+                            <div key={c.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                        <h4 className="font-black text-slate-800 dark:text-slate-100">{c.name}</h4>
+                                        <p className="text-[11px] text-slate-400 font-mono">{c.timezone} · {c.work_start_time}–{c.work_end_time} · gracia {c.grace_minutes_late}m</p>
+                                        <p className="text-[11px] text-slate-500 mt-1">Agentes activos: {c.active_users}</p>
                                     </div>
-                                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 p-3 sm:p-4 rounded-2xl">
+                                    <div className="flex gap-2 shrink-0">
+                                        <button onClick={() => setEditing(c)} className="text-xs font-bold text-blue-600 hover:underline">Editar</button>
+                                        {isSuper && c.active_users === 0 && <button onClick={() => remove(c)} className="text-xs font-bold text-red-500 hover:underline">Eliminar</button>}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {rows.length === 0 && <EmptyState message="Sin empresas aun" />}
+                    </div>
+                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva empresa" maxWidth="max-w-2xl">
+                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Nueva empresa</h3>
+                        <CompanyForm onSave={save} onCancel={() => setCreating(false)} />
+                    </Modal>
+                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar empresa" maxWidth="max-w-2xl">
+                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Editar empresa</h3>
+                        {editing && <CompanyForm initial={editing} onSave={save} onCancel={() => setEditing(null)} />}
+                    </Modal>
+                </div>
+            );
+        };
+
+        const InviteForm = ({ defaultRole, isSuper, onSave, onCancel }) => {
+            const [companies, setCompanies] = useState([]);
+            const [form, setForm] = useState({ email: '', name: '', role: defaultRole, company_id: '' });
+            const [submitting, setSubmitting] = useState(false);
+            useEffect(() => { apiFetch('admin/companies').then(d => setCompanies(d.companies || [])).catch(() => {}); }, []);
+            const submit = async (e) => {
+                e.preventDefault();
+                setSubmitting(true);
+                try {
+                    const body = { email: form.email, name: form.name, role: form.role };
+                    if (form.company_id) body.company_id = parseInt(form.company_id, 10);
+                    await onSave(body);
+                } finally { setSubmitting(false); }
+            };
+            return (
+                <form onSubmit={submit} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Correo</span>
+                            <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre</span>
+                            <input required minLength="2" maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium" />
+                        </label>
+                        {isSuper && (
+                            <label className="block">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rol</span>
+                                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
+                                    className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
+                                    <option value="consultant">Consultor</option>
+                                    <option value="admin">Administrador</option>
+                                </select>
+                            </label>
+                        )}
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Empresa</span>
+                            <select value={form.company_id} onChange={(e) => setForm({ ...form, company_id: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
+                                <option value="">— Sin empresa —</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </label>
+                    </div>
+                    <p className="text-[11px] text-slate-500">Se enviara un correo con una contrasena temporal. El usuario debera cambiarla al ingresar.</p>
+                    <div className="flex gap-2">
+                        <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cancelar</button>
+                        <button type="submit" disabled={submitting} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Enviar invitacion
+                        </button>
+                    </div>
+                </form>
+            );
+        };
+
+        const AgentsTab = ({ isSuper }) => {
+            const { push: toast } = useToast();
+            const [q, setQ] = useState('');
+            const [companyId, setCompanyId] = useState('');
+            const [status, setStatus] = useState('');
+            const [data, setData] = useState({ agents: [], total: 0 });
+            const [companies, setCompanies] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [inviting, setInviting] = useState(false);
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try {
+                    const qs = new URLSearchParams();
+                    if (q) qs.set('q', q);
+                    if (companyId) qs.set('company_id', companyId);
+                    if (status) qs.set('status', status);
+                    const d = await apiFetch(`admin/agents/search?${qs.toString()}`);
+                    setData(d);
+                    if (companies.length === 0) {
+                        const cs = await apiFetch('admin/companies');
+                        setCompanies(cs.companies || []);
+                    }
+                } catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, [q, companyId, status, companies.length]);
+            useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+
+            const invite = async (body) => {
+                try { await apiFetch('admin/users/invite', { method: 'POST', body }); toast('success', 'Invitacion enviada.'); setInviting(false); load(); }
+                catch (e) { toast('error', e.message); }
+            };
+            const toggleStatus = async (a) => {
+                const next = a.status === 'active' ? 'disabled' : 'active';
+                try {
+                    await apiFetch(`admin/users/${a.id}`, { method: 'PUT', body: {
+                        company_id: a.company_id, status: next,
+                    }});
+                    toast('success', 'Agente actualizado.'); load();
+                } catch (e) { toast('error', e.message); }
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-end gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                        <input placeholder="Buscar por nombre o correo" value={q} onChange={(e) => setQ(e.target.value)}
+                            className="flex-1 min-w-[200px] px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-medium" />
+                        {isSuper && (
+                            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                                <option value="">Todas las empresas</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        )}
+                        <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                            <option value="">Cualquier estado</option>
+                            <option value="active">Activos</option>
+                            <option value="disabled">Deshabilitados</option>
+                            <option value="pending_confirmation">Pendientes</option>
+                        </select>
+                        <button onClick={() => setInviting(true)} className="ml-auto px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700">+ Invitar</button>
+                    </div>
+                    {loading ? <LoadingScreen /> : error ? <ErrorState message={error} onRetry={load} /> : (
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 divide-y dark:divide-slate-800">
+                            {data.agents.map(a => (
+                                <div key={a.id} className="p-4 flex flex-wrap items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                    <div className="flex-1 min-w-[180px]">
+                                        <p className="font-bold text-slate-800 dark:text-slate-100">{a.name} <span className="text-[10px] font-black uppercase ml-2 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">{a.role}</span></p>
+                                        <p className="text-xs text-slate-500">{a.email}</p>
+                                    </div>
+                                    <span className="text-xs text-slate-500">{a.company_name || 'Sin empresa'}</span>
+                                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
+                                    <button onClick={() => toggleStatus(a)} className="text-xs font-bold text-blue-600 hover:underline">{a.status === 'active' ? 'Desactivar' : 'Activar'}</button>
+                                </div>
+                            ))}
+                            {data.agents.length === 0 && <EmptyState message="Sin resultados" />}
+                        </div>
+                    )}
+                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar agente" maxWidth="max-w-2xl">
+                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar agente</h3>
+                        <InviteForm defaultRole="consultant" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
+                    </Modal>
+                </div>
+            );
+        };
+
+        const AdminsTab = () => {
+            const { push: toast } = useToast();
+            const [data, setData] = useState({ agents: [], total: 0 });
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [inviting, setInviting] = useState(false);
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try {
+                    const d = await apiFetch('admin/users');
+                    setData({ agents: (d.users || []).filter(u => u.role === 'admin' || u.role === 'super_admin') });
+                } catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, []);
+            useEffect(() => { load(); }, [load]);
+
+            const invite = async (body) => {
+                try { await apiFetch('admin/users/invite', { method: 'POST', body: { ...body, role: 'admin' } }); toast('success', 'Admin invitado.'); setInviting(false); load(); }
+                catch (e) { toast('error', e.message); }
+            };
+            if (loading) return <LoadingScreen />;
+            if (error) return <ErrorState message={error} onRetry={load} />;
+            return (
+                <div className="space-y-4">
+                    <div className="flex justify-end">
+                        <button onClick={() => setInviting(true)} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700">+ Invitar admin</button>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 divide-y dark:divide-slate-800">
+                        {data.agents.map(a => (
+                            <div key={a.id} className="p-4 flex flex-wrap items-center gap-3">
+                                <div className="flex-1 min-w-[180px]">
+                                    <p className="font-bold text-slate-800 dark:text-slate-100">{a.name} <span className="text-[10px] font-black uppercase ml-2 px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300">{a.role}</span></p>
+                                    <p className="text-xs text-slate-500">{a.email}</p>
+                                </div>
+                                <span className="text-xs text-slate-500">{a.company_name || 'Sin empresa'}</span>
+                                <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
+                            </div>
+                        ))}
+                        {data.agents.length === 0 && <EmptyState message="Sin administradores aun" />}
+                    </div>
+                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar administrador" maxWidth="max-w-2xl">
+                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar administrador</h3>
+                        <InviteForm defaultRole="admin" isSuper={true} onSave={invite} onCancel={() => setInviting(false)} />
+                    </Modal>
+                </div>
+            );
+        };
+
+        const ChangesTab = ({ onChange }) => {
+            const { push: toast } = useToast();
+            const [items, setItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try { const d = await apiFetch('admin/change-requests'); setItems(d.requests || []); }
+                catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, []);
+            useEffect(() => { load(); }, [load]);
+            const decide = async (id, decision) => {
+                try { await apiFetch('admin/decide', { method: 'POST', body: { type: 'change', id, decision } }); toast('success', `Solicitud ${decision === 'approve' ? 'aprobada' : 'rechazada'}.`); load(); onChange?.(); }
+                catch (e) { toast('error', e.message); }
+            };
+            if (loading) return <LoadingScreen />;
+            if (error) return <ErrorState message={error} onRetry={load} />;
+            return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                    {items.map(req => (
+                        <div key={req.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                            <div>
+                                <h4 className="font-bold text-base text-slate-800 dark:text-slate-100">{req.user_name}</h4>
+                                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Cambio de empresa</p>
+                            </div>
+                            <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl">
+                                <div className="text-center flex-1">
+                                    <p className="text-[9px] text-slate-400 font-black uppercase">Actual</p>
+                                    <p className="font-bold text-red-400 text-xs">{req.old_company_name || '—'}</p>
+                                </div>
+                                <Icon name="ArrowLeftRight" className="text-slate-300" size={16} />
+                                <div className="text-center flex-1">
+                                    <p className="text-[9px] text-slate-400 font-black uppercase">Nueva</p>
+                                    <p className="font-bold text-emerald-500 text-xs">{req.new_company_name}</p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => decide(req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 flex items-center justify-center gap-2"><Icon name="Check" size={16} /> Aprobar</button>
+                                <button onClick={() => decide(req.id, 'reject')} className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 rounded-xl font-bold text-sm hover:bg-red-100 flex items-center justify-center gap-2"><Icon name="X" size={16} /> Rechazar</button>
+                            </div>
+                        </div>
+                    ))}
+                    {items.length === 0 && <EmptyState message="No hay solicitudes de cambio pendientes" />}
+                </div>
+            );
+        };
+
+        const OvertimeTab = ({ onChange }) => {
+            const { push: toast } = useToast();
+            const [items, setItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try { const d = await apiFetch('admin/overtime-requests'); setItems(d.requests || []); }
+                catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, []);
+            useEffect(() => { load(); }, [load]);
+            const decide = async (id, decision) => {
+                try { await apiFetch('admin/decide', { method: 'POST', body: { type: 'overtime', id, decision } }); toast('success', `Solicitud ${decision === 'approve' ? 'aprobada' : 'rechazada'}.`); load(); onChange?.(); }
+                catch (e) { toast('error', e.message); }
+            };
+            if (loading) return <LoadingScreen />;
+            if (error) return <ErrorState message={error} onRetry={load} />;
+            const news = items.filter(i => (i.request_type || 'new') === 'new');
+            const edits = items.filter(i => i.request_type === 'edit');
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <h3 className="font-black uppercase tracking-widest text-xs text-slate-500 mb-3">Nuevas solicitudes</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {news.map(req => (
+                                <div key={req.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                                    <div>
+                                        <h4 className="font-bold text-base text-slate-800 dark:text-slate-100">{req.user_name}</h4>
+                                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{req.date}</p>
+                                    </div>
+                                    <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl">
+                                        <p className="text-[9px] text-slate-400 font-black uppercase mb-1">Horas declaradas</p>
+                                        <p className="font-black text-2xl text-amber-600 dark:text-amber-300">{req.hours}h</p>
+                                        {req.reason && <p className="text-xs text-slate-500 mt-2 italic break-words">"{req.reason}"</p>}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => decide(req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 flex items-center justify-center gap-2"><Icon name="Check" size={16} /> Aprobar</button>
+                                        <button onClick={() => decide(req.id, 'reject')} className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 rounded-xl font-bold text-sm hover:bg-red-100 flex items-center justify-center gap-2"><Icon name="X" size={16} /> Rechazar</button>
+                                    </div>
+                                </div>
+                            ))}
+                            {news.length === 0 && <EmptyState message="Sin solicitudes nuevas" />}
+                        </div>
+                    </div>
+                    <div>
+                        <h3 className="font-black uppercase tracking-widest text-xs text-slate-500 mb-3">Ediciones pendientes</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {edits.map(req => (
+                                <div key={req.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-amber-200 dark:border-amber-900/40 shadow-sm flex flex-col gap-4">
+                                    <div>
+                                        <h4 className="font-bold text-base text-slate-800 dark:text-slate-100">{req.user_name}</h4>
+                                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Edicion · {req.date}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl">
                                         <div className="text-center flex-1">
                                             <p className="text-[9px] text-slate-400 font-black uppercase">Actual</p>
-                                            <p className="font-bold text-red-400 dark:text-red-300 text-xs">{req.old_company_name || '—'}</p>
+                                            <p className="font-black text-amber-600 text-lg">{req.hours}h</p>
                                         </div>
                                         <Icon name="ArrowLeftRight" className="text-slate-300" size={16} />
                                         <div className="text-center flex-1">
-                                            <p className="text-[9px] text-slate-400 font-black uppercase">Nueva</p>
-                                            <p className="font-bold text-emerald-500 dark:text-emerald-300 text-xs">{req.new_company_name}</p>
+                                            <p className="text-[9px] text-slate-400 font-black uppercase">Nuevo</p>
+                                            <p className="font-black text-emerald-500 text-lg">{req.new_hours}h</p>
                                         </div>
                                     </div>
+                                    {req.reason && <p className="text-xs text-slate-500 italic break-words">"{req.reason}"</p>}
                                     <div className="flex gap-2">
-                                        <button onClick={() => decide('change', req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 sm:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 text-sm"><Icon name="Check" size={16} /> Aprobar</button>
-                                        <button onClick={() => decide('change', req.id, 'reject')} className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 sm:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 text-sm"><Icon name="X" size={16} /> Rechazar</button>
+                                        <button onClick={() => decide(req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 flex items-center justify-center gap-2"><Icon name="Check" size={16} /> Aprobar</button>
+                                        <button onClick={() => decide(req.id, 'reject')} className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 rounded-xl font-bold text-sm hover:bg-red-100 flex items-center justify-center gap-2"><Icon name="X" size={16} /> Rechazar</button>
                                     </div>
                                 </div>
                             ))}
-                            {pendingChange === 0 && <EmptyState message="No hay solicitudes de cambio pendientes" />}
+                            {edits.length === 0 && <EmptyState message="Sin ediciones pendientes" />}
                         </div>
-                    )}
-
-                    {!loading && !error && activeTab === 'overtime' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                            {otReqs.map(req => (
-                                <div key={req.id} className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-4 anim-zoom-in">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h4 className="font-bold text-base sm:text-lg text-slate-800 dark:text-slate-100">{req.user_name}</h4>
-                                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Horas extra · {req.date}</p>
-                                        </div>
-                                        <div className="bg-amber-50 dark:bg-amber-900/40 p-2 rounded-xl text-amber-600 dark:text-amber-300"><Icon name="Hourglass" size={18} /></div>
-                                    </div>
-                                    <div className="bg-slate-50 dark:bg-slate-800/60 p-3 sm:p-4 rounded-2xl">
-                                        <p className="text-[9px] text-slate-400 font-black uppercase mb-1">Horas declaradas</p>
-                                        <p className="font-black text-2xl sm:text-3xl text-amber-600 dark:text-amber-300">{req.hours}h</p>
-                                        {req.reason && <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 italic break-words">"{req.reason}"</p>}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => decide('overtime', req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 sm:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 text-sm"><Icon name="Check" size={16} /> Aprobar</button>
-                                        <button onClick={() => decide('overtime', req.id, 'reject')} className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 sm:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 text-sm"><Icon name="X" size={16} /> Rechazar</button>
-                                    </div>
-                                </div>
-                            ))}
-                            {pendingOt === 0 && <EmptyState message="No hay horas extra pendientes" />}
-                        </div>
-                    )}
+                    </div>
                 </div>
             );
         };

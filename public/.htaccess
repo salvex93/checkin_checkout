@@ -29,6 +29,7 @@
 RedirectMatch 404 /\.git
 RedirectMatch 404 /\.env
 RedirectMatch 404 /storage
+RedirectMatch 404 /api/lib/
 
 # Headers de seguridad como fallback si PHP no los emite (ej. archivos estaticos)
 <IfModule mod_headers.c>
