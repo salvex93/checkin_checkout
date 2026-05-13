@@ -136,3 +136,172 @@ function admin_decide(array $body): never {
     audit_log((int)$admin['id'], "admin_{$type}_{$decision}", ['target_id' => $id]);
     ok(['message' => 'Decision aplicada.']);
 }
+
+// =====================================================================
+// Fase 2 — Administracion de empresas y agentes.
+// =====================================================================
+
+function admin_companies_list(): never {
+    require_admin();
+    $rows = db_all(
+        'SELECT id, name, timezone, work_start_time, work_end_time,
+                work_days_mask, grace_minutes_late, is_configured, created_at,
+                (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id AND u.is_active = 1) AS active_users
+           FROM companies c
+          ORDER BY name ASC'
+    );
+    ok(['companies' => array_map(fn($r) => [
+        'id' => (int)$r['id'],
+        'name' => $r['name'],
+        'timezone' => $r['timezone'],
+        'work_start_time' => substr($r['work_start_time'], 0, 5),
+        'work_end_time' => substr($r['work_end_time'], 0, 5),
+        'work_days_mask' => (int)$r['work_days_mask'],
+        'grace_minutes_late' => (int)$r['grace_minutes_late'],
+        'is_configured' => (int)$r['is_configured'] === 1,
+        'active_users' => (int)$r['active_users'],
+        'created_at' => $r['created_at'],
+    ], $rows)]);
+}
+
+function admin_companies_create(array $body): never {
+    require_csrf();
+    $admin = require_admin();
+    $name = validate_string($body, 'name', 1, 100);
+    $tz = validate_timezone($body, 'timezone');
+    $start = validate_time_hhmm($body, 'work_start_time');
+    $end = validate_time_hhmm($body, 'work_end_time');
+    $mask = validate_days_mask($body, 'work_days_mask');
+    $grace = validate_int($body, 'grace_minutes_late', 0, 60);
+
+    if ($start >= $end) {
+        err('INVALID_INPUT', 'work_start_time debe ser menor que work_end_time.', 400, ['field' => 'work_end_time']);
+    }
+    if (db_one('SELECT id FROM companies WHERE name = ?', [$name])) {
+        err('CONFLICT', 'Ya existe una empresa con ese nombre.', 409, ['field' => 'name']);
+    }
+
+    db_exec(
+        'INSERT INTO companies (name, timezone, work_start_time, work_end_time, work_days_mask, grace_minutes_late, is_configured)
+              VALUES (?, ?, ?, ?, ?, ?, 1)',
+        [$name, $tz, $start, $end, $mask, $grace]
+    );
+    $id = (int)db_last_id();
+    audit_log((int)$admin['id'], 'admin_company_create', ['company_id' => $id, 'name' => $name]);
+    ok(['id' => $id, 'message' => 'Empresa creada.'], 201);
+}
+
+function admin_companies_update(int $id, array $body): never {
+    require_csrf();
+    $admin = require_admin();
+    $existing = db_one('SELECT id, name FROM companies WHERE id = ?', [$id]);
+    if (!$existing) err('NOT_FOUND', 'Empresa no encontrada.', 404);
+
+    $name = validate_string($body, 'name', 1, 100);
+    $tz = validate_timezone($body, 'timezone');
+    $start = validate_time_hhmm($body, 'work_start_time');
+    $end = validate_time_hhmm($body, 'work_end_time');
+    $mask = validate_days_mask($body, 'work_days_mask');
+    $grace = validate_int($body, 'grace_minutes_late', 0, 60);
+
+    if ($start >= $end) {
+        err('INVALID_INPUT', 'work_start_time debe ser menor que work_end_time.', 400, ['field' => 'work_end_time']);
+    }
+    $dup = db_one('SELECT id FROM companies WHERE name = ? AND id <> ?', [$name, $id]);
+    if ($dup) err('CONFLICT', 'Ya existe otra empresa con ese nombre.', 409, ['field' => 'name']);
+
+    db_exec(
+        'UPDATE companies SET name = ?, timezone = ?, work_start_time = ?, work_end_time = ?,
+                              work_days_mask = ?, grace_minutes_late = ?, is_configured = 1
+                 WHERE id = ?',
+        [$name, $tz, $start, $end, $mask, $grace, $id]
+    );
+    audit_log((int)$admin['id'], 'admin_company_update', ['company_id' => $id]);
+    ok(['message' => 'Empresa actualizada.']);
+}
+
+function admin_companies_delete(int $id): never {
+    require_csrf();
+    $admin = require_admin();
+    $existing = db_one('SELECT id, name FROM companies WHERE id = ?', [$id]);
+    if (!$existing) err('NOT_FOUND', 'Empresa no encontrada.', 404);
+
+    $active = db_one('SELECT COUNT(*) AS c FROM users WHERE company_id = ? AND is_active = 1', [$id]);
+    if ((int)$active['c'] > 0) {
+        err('CONFLICT', 'No se puede eliminar: la empresa tiene agentes activos asignados.', 409, ['active_users' => (int)$active['c']]);
+    }
+    db_exec('DELETE FROM companies WHERE id = ?', [$id]);
+    audit_log((int)$admin['id'], 'admin_company_delete', ['company_id' => $id, 'name' => $existing['name']]);
+    ok(['message' => 'Empresa eliminada.']);
+}
+
+function admin_users_list(): never {
+    require_admin();
+    $rows = db_all(
+        "SELECT u.id, u.email, u.name, u.role, u.company_id, u.is_active, u.status,
+                u.timezone, u.work_start_time, u.work_end_time, u.work_days_mask,
+                u.created_at, c.name AS company_name
+           FROM users u
+           LEFT JOIN companies c ON c.id = u.company_id
+          ORDER BY u.created_at DESC"
+    );
+    ok(['users' => array_map(fn($r) => [
+        'id' => (int)$r['id'],
+        'email' => $r['email'],
+        'name' => $r['name'],
+        'role' => $r['role'],
+        'company_id' => $r['company_id'] !== null ? (int)$r['company_id'] : null,
+        'company_name' => $r['company_name'],
+        'is_active' => (int)$r['is_active'] === 1,
+        'status' => $r['status'],
+        'timezone' => $r['timezone'],
+        'work_start_time' => $r['work_start_time'] !== null ? substr($r['work_start_time'], 0, 5) : null,
+        'work_end_time' => $r['work_end_time'] !== null ? substr($r['work_end_time'], 0, 5) : null,
+        'work_days_mask' => $r['work_days_mask'] !== null ? (int)$r['work_days_mask'] : null,
+        'created_at' => $r['created_at'],
+    ], $rows)]);
+}
+
+function admin_users_update(int $id, array $body): never {
+    require_csrf();
+    $admin = require_admin();
+    $user = db_one('SELECT id, role FROM users WHERE id = ?', [$id]);
+    if (!$user) err('NOT_FOUND', 'Agente no encontrado.', 404);
+
+    $companyId = null;
+    if (array_key_exists('company_id', $body) && $body['company_id'] !== null && $body['company_id'] !== '') {
+        $companyId = validate_int($body, 'company_id', 1);
+        if (!db_one('SELECT id FROM companies WHERE id = ?', [$companyId])) {
+            err('INVALID_INPUT', 'Empresa no existe.', 400, ['field' => 'company_id']);
+        }
+    }
+
+    $status = validate_string($body, 'status', 1, 30);
+    if (!in_array($status, ['pending_confirmation', 'active', 'disabled'], true)) {
+        err('INVALID_INPUT', 'Status invalido.', 400, ['field' => 'status']);
+    }
+    if ($user['role'] === 'admin' && $status === 'disabled' && (int)$admin['id'] === $id) {
+        err('CONFLICT', 'No puedes desactivarte a ti mismo.', 409);
+    }
+
+    $tz = isset($body['timezone']) && $body['timezone'] !== '' ? validate_timezone($body, 'timezone') : null;
+    $start = isset($body['work_start_time']) && $body['work_start_time'] !== '' ? validate_time_hhmm($body, 'work_start_time') : null;
+    $end = isset($body['work_end_time']) && $body['work_end_time'] !== '' ? validate_time_hhmm($body, 'work_end_time') : null;
+    $mask = isset($body['work_days_mask']) && $body['work_days_mask'] !== '' ? validate_days_mask($body, 'work_days_mask') : null;
+
+    if ($start !== null && $end !== null && $start >= $end) {
+        err('INVALID_INPUT', 'work_start_time debe ser menor que work_end_time.', 400, ['field' => 'work_end_time']);
+    }
+
+    $isActive = $status === 'active' ? 1 : 0;
+    db_exec(
+        'UPDATE users SET company_id = ?, status = ?, is_active = ?,
+                          timezone = ?, work_start_time = ?, work_end_time = ?, work_days_mask = ?
+                 WHERE id = ?',
+        [$companyId, $status, $isActive, $tz, $start, $end, $mask, $id]
+    );
+    audit_log((int)$admin['id'], 'admin_user_update', [
+        'user_id' => $id, 'company_id' => $companyId, 'status' => $status
+    ]);
+    ok(['message' => 'Agente actualizado.']);
+}

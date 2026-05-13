@@ -47,10 +47,32 @@ if (strlen($endpoint) > 80) {
     err('NOT_FOUND', 'Endpoint no existe.', 404);
 }
 
-$body = ($method === 'POST') ? read_json_body() : [];
+$body = in_array($method, ['POST', 'PUT', 'DELETE'], true) ? read_json_body() : [];
+
+// Parser de paths con id: admin/companies/123 -> ('admin/companies', 123)
+$endpointBase = $endpoint;
+$endpointId = null;
+if (preg_match('#^(admin/companies|admin/users)/(\d+)$#', $endpoint, $m)) {
+    $endpointBase = $m[1];
+    $endpointId = (int)$m[2];
+}
 
 // === Dispatcher ===
 try {
+    // Rutas con id (PUT/DELETE sobre recursos especificos)
+    if ($endpointId !== null) {
+        switch ("{$method} {$endpointBase}") {
+            case 'PUT admin/companies':
+                admin_companies_update($endpointId, $body);
+            case 'DELETE admin/companies':
+                admin_companies_delete($endpointId);
+            case 'PUT admin/users':
+                admin_users_update($endpointId, $body);
+            default:
+                err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
+        }
+    }
+
     switch ("{$method} {$endpoint}") {
         // --- CSRF token ---
         case 'GET csrf':
@@ -93,6 +115,14 @@ try {
             admin_overtime_requests();
         case 'POST admin/decide':
             admin_decide($body);
+
+        // --- Admin: empresas y agentes (Fase 2) ---
+        case 'GET admin/companies':
+            admin_companies_list();
+        case 'POST admin/companies':
+            admin_companies_create($body);
+        case 'GET admin/users':
+            admin_users_list();
 
         default:
             err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
