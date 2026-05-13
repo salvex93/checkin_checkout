@@ -51,6 +51,33 @@ function is_workday(int $dayOfWeekIso, int $mask): bool {
     return ($mask & (1 << $bit)) !== 0;
 }
 
+/**
+ * TZ hibrida: si el cliente envia una TZ valida via Intl.DateTimeFormat,
+ * se usa para work_date/entry_time. Se guarda la TZ del perfil tambien y
+ * tz_mismatch=1 cuando difieren — bandera de auditoria, no de bloqueo.
+ * Si no llega client_timezone (clientes viejos o sin JS) cae al perfil.
+ */
+function resolve_effective_tz(array $sched, ?string $clientTz): array {
+    $profileTz = $sched['timezone'];
+    $clientTz = $clientTz !== null ? trim($clientTz) : null;
+
+    if ($clientTz === null || $clientTz === '') {
+        return ['tz' => new DateTimeZone($profileTz), 'client_tz' => null, 'mismatch' => 0];
+    }
+
+    try {
+        $tz = new DateTimeZone($clientTz);
+    } catch (Throwable $_) {
+        // TZ invalida del cliente: ignorar silenciosamente y caer al perfil.
+        return ['tz' => new DateTimeZone($profileTz), 'client_tz' => null, 'mismatch' => 0];
+    }
+    return [
+        'tz' => $tz,
+        'client_tz' => $clientTz,
+        'mismatch' => $clientTz !== $profileTz ? 1 : 0
+    ];
+}
+
 function records_companies(): never {
     require_login();
     $companies = db_all('SELECT id, name FROM companies ORDER BY name');
@@ -84,7 +111,10 @@ function records_clockin(array $body): never {
     require_csrf();
     $u = require_login();
     $sched = effective_schedule($u);
-    $tz = new DateTimeZone($sched['timezone']);
+    $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
+        ? $body['client_timezone'] : null;
+    $tzInfo = resolve_effective_tz($sched, $clientTzRaw);
+    $tz = $tzInfo['tz'];
     $now = new DateTimeImmutable('now', $tz);
     $today = $now->format('Y-m-d');
     $currentHour = (int)$now->format('G');
@@ -135,12 +165,13 @@ function records_clockin(array $body): never {
     $isLate = $entryMin > ($startMin + (int)$sched['grace_minutes_late']);
 
     db_exec(
-        'INSERT INTO attendance_records (user_id, work_date, entry_time, timezone) VALUES (?, ?, ?, ?)',
-        [$u['id'], $today, $entryTime, $sched['timezone']]
+        'INSERT INTO attendance_records (user_id, work_date, entry_time, timezone, client_timezone, tz_mismatch) VALUES (?, ?, ?, ?, ?, ?)',
+        [$u['id'], $today, $entryTime, $sched['timezone'], $tzInfo['client_tz'], $tzInfo['mismatch']]
     );
     $newId = (int)db_last_id();
     audit_log((int)$u['id'], 'clockin', [
         'date' => $today, 'tz' => $sched['timezone'],
+        'client_tz' => $tzInfo['client_tz'], 'tz_mismatch' => (bool)$tzInfo['mismatch'],
         'is_late' => $isLate, 'is_workday' => $isWorkday
     ]);
     $rec = db_one('SELECT * FROM attendance_records WHERE id = ?', [$newId]);
@@ -149,15 +180,19 @@ function records_clockin(array $body): never {
         'warnings' => [
             'is_late' => $isLate,
             'non_workday' => !$isWorkday,
+            'tz_mismatch' => (bool)$tzInfo['mismatch'],
         ]
     ]);
 }
 
-function records_clockout(): never {
+function records_clockout(array $body = []): never {
     require_csrf();
     $u = require_login();
     $sched = effective_schedule($u);
-    $tz = new DateTimeZone($sched['timezone']);
+    $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
+        ? $body['client_timezone'] : null;
+    $tzInfo = resolve_effective_tz($sched, $clientTzRaw);
+    $tz = $tzInfo['tz'];
     $nowDt = new DateTimeImmutable('now', $tz);
     $today = $nowDt->format('Y-m-d');
     $now = $nowDt->format('H:i');
@@ -166,11 +201,17 @@ function records_clockout(): never {
     if (!$rec) err('NOT_CHECKED_IN', 'Debes marcar entrada primero.', 409);
     if ($rec['exit_time']) err('ALREADY_CHECKED_OUT', 'Ya registraste tu salida hoy.', 409);
 
+    // Si el clockout viene desde una TZ distinta a la del clockin (viajaste),
+    // se respeta la TZ del navegador para exit_time pero queda marcado.
+    $exitMismatch = $tzInfo['mismatch'] || ($rec['tz_mismatch'] ?? 0);
     db_exec(
-        'UPDATE attendance_records SET exit_time = ?, closed_reason = ? WHERE id = ?',
-        [$now, 'normal', $rec['id']]
+        'UPDATE attendance_records SET exit_time = ?, closed_reason = ?, tz_mismatch = ? WHERE id = ?',
+        [$now, 'normal', $exitMismatch ? 1 : 0, $rec['id']]
     );
-    audit_log((int)$u['id'], 'clockout', ['date' => $today, 'tz' => $sched['timezone']]);
+    audit_log((int)$u['id'], 'clockout', [
+        'date' => $today, 'tz' => $sched['timezone'],
+        'client_tz' => $tzInfo['client_tz'], 'tz_mismatch' => (bool)$tzInfo['mismatch']
+    ]);
     $rec = db_one('SELECT * FROM attendance_records WHERE id = ?', [$rec['id']]);
     ok(['record' => normalize_record($rec)]);
 }
@@ -332,6 +373,8 @@ function normalize_record(array $r): array {
         'entry_time' => $r['entry_time'],
         'exit_time' => $r['exit_time'],
         'timezone' => $r['timezone'] ?? null,
+        'client_timezone' => $r['client_timezone'] ?? null,
+        'tz_mismatch' => isset($r['tz_mismatch']) ? (bool)$r['tz_mismatch'] : false,
         'closed_reason' => $r['closed_reason'],
         'overtime_hours' => (float)$r['overtime_hours'],
         'overtime_status' => $r['overtime_status']

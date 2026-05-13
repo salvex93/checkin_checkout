@@ -110,7 +110,7 @@ try {
         case 'POST records/clockin':
             records_clockin($body);
         case 'POST records/clockout':
-            records_clockout();
+            records_clockout($body);
         case 'POST records/overtime':
             records_overtime($body);
         case 'POST records/overtime-edit-request':

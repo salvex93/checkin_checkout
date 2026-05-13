@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     entry_time TEXT NOT NULL,
     exit_time TEXT NULL,
     timezone TEXT NULL,
+    client_timezone TEXT NULL,
+    tz_mismatch INTEGER NOT NULL DEFAULT 0,
     closed_reason TEXT NULL CHECK (closed_reason IN ('normal','forgotten','overtime') OR closed_reason IS NULL),
     overtime_hours REAL NOT NULL DEFAULT 0,
     overtime_status TEXT NOT NULL DEFAULT 'none' CHECK (overtime_status IN ('none','pending','approved','rejected')),

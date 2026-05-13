@@ -149,6 +149,7 @@
                                 className={`pointer-events-auto rounded-2xl px-4 py-3 shadow-lg border text-sm font-medium anim-fade-in ${
                                     t.type === 'error' ? 'bg-red-50 dark:bg-red-900/40 border-red-200 dark:border-red-800 text-red-700 dark:text-red-200' :
                                     t.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-200' :
+                                    t.type === 'warning' ? 'bg-amber-50 dark:bg-amber-900/40 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-200' :
                                     'bg-blue-50 dark:bg-blue-900/40 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-200'
                                 }`}>
                                 {t.message}
@@ -677,18 +678,28 @@
 
             useEffect(() => { refresh(); }, [refresh]);
 
+            const clientTimezone = () => {
+                try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; }
+                catch (_) { return null; }
+            };
+
             const handleClockIn = async (extraBody = {}) => {
                 if (submitting) return;
                 setSubmitting(true);
                 try {
-                    const d = await apiFetch('records/clockin', { method: 'POST', body: extraBody });
+                    const body = { client_timezone: clientTimezone(), ...extraBody };
+                    const d = await apiFetch('records/clockin', { method: 'POST', body });
                     if (d.decision_required) {
                         setPendingDecision({ priorRecord: d.prior_record, rule: d.rule });
                         return;
                     }
                     setPendingDecision(null);
                     setTodayRecord(d.record);
-                    toast('success', 'Entrada registrada.');
+                    if (d.warnings?.tz_mismatch) {
+                        toast('warning', 'Marcaste desde una zona horaria distinta a la de tu perfil. Quedo registrado.');
+                    } else {
+                        toast('success', 'Entrada registrada.');
+                    }
                     refresh();
                 } catch (e) {
                     toast('error', e.message);
@@ -699,7 +710,7 @@
                 if (submitting) return;
                 setSubmitting(true);
                 try {
-                    const d = await apiFetch('records/clockout', { method: 'POST' });
+                    const d = await apiFetch('records/clockout', { method: 'POST', body: { client_timezone: clientTimezone() } });
                     setTodayRecord(d.record);
                     toast('success', 'Salida registrada.');
                     refresh();
@@ -1654,6 +1665,19 @@
             );
         };
 
+        const TzMismatchBadge = ({ rec }) => {
+            if (!rec.tz_mismatch) return null;
+            const profile = rec.timezone || '—';
+            const client = rec.client_timezone || '—';
+            return (
+                <span
+                    title={`Marco desde ${client} (perfil: ${profile})`}
+                    className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 cursor-help">
+                    TZ
+                </span>
+            );
+        };
+
         const AdminRecordRow = ({ rec }) => {
             const stateLabel = rec.exit_time
                 ? (rec.closed_reason === 'forgotten' ? 'OLVIDO 18:00' : rec.closed_reason === 'overtime' ? 'EXTRA' : 'COMPLETO')
@@ -1667,7 +1691,9 @@
                 <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{rec.user_name}</td>
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{rec.company_name || '—'}</td>
-                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium">{rec.work_date}</td>
+                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium">
+                        {rec.work_date}<TzMismatchBadge rec={rec} />
+                    </td>
                     <td className="px-6 py-4 font-mono font-bold text-blue-600 dark:text-blue-400">{rec.entry_time}</td>
                     <td className="px-6 py-4 font-mono font-bold text-orange-600 dark:text-orange-400">{rec.exit_time || '--:--'}</td>
                     <td className="px-6 py-4 text-xs">{rec.overtime_hours > 0 ? `${rec.overtime_hours}h ${rec.overtime_status}` : '—'}</td>
@@ -1683,7 +1709,9 @@
                         <p className="font-bold text-slate-800 dark:text-slate-100">{rec.user_name}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">{rec.company_name || 'Sin empresa'}</p>
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{rec.work_date}</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        {rec.work_date}<TzMismatchBadge rec={rec} />
+                    </span>
                 </div>
                 <div className="flex gap-3 text-sm">
                     <div>

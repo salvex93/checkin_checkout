@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     entry_time TIME NOT NULL,
     exit_time TIME NULL,
     timezone VARCHAR(64) NULL,
+    client_timezone VARCHAR(64) NULL,
+    tz_mismatch TINYINT(1) NOT NULL DEFAULT 0,
     closed_reason ENUM('normal','forgotten','overtime') NULL,
     overtime_hours DECIMAL(3,1) NOT NULL DEFAULT 0,
     overtime_status ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',

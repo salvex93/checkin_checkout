@@ -32,6 +32,9 @@ function admin_records(): never {
             'work_date' => $r['work_date'],
             'entry_time' => $r['entry_time'],
             'exit_time' => $r['exit_time'],
+            'timezone' => $r['timezone'] ?? null,
+            'client_timezone' => $r['client_timezone'] ?? null,
+            'tz_mismatch' => isset($r['tz_mismatch']) ? (bool)$r['tz_mismatch'] : false,
             'closed_reason' => $r['closed_reason'],
             'overtime_hours' => (float)$r['overtime_hours'],
             'overtime_status' => $r['overtime_status']
