@@ -254,21 +254,29 @@ Archivo `.env` (creado a partir de `.env.example`). Nunca se versiona.
 | `AUTH_LOCK_MINUTES` | `15` | Duracion del bloqueo |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:8000` | Lista separada por coma |
 
-### Email de soporte y SMTP
+### Email de soporte y envio de correos
+
+`MAIL_DRIVER` selecciona el motor de envio:
+
+- `resend` (recomendado en produccion) — API HTTP via Resend, sale por HTTPS:443. Inmune al bloqueo SMTP saliente de hosting compartido (GoDaddy/HostGator). Requiere cuenta en [resend.com](https://resend.com), dominio verificado (SPF+DKIM) y `RESEND_API_KEY`.
+- `smtp` (default en desarrollo) — PHPMailer + servidor SMTP. Util en local con MailHog o si el hosting permite SMTP saliente.
 
 | Variable | Notas |
 |---|---|
 | `SUPPORT_EMAIL` | Email visible en UI para soporte |
-| `SMTP_HOST` | Host SMTP. Ej `smtp.titan.email` (Titan Mail / HostGator) |
+| `MAIL_DRIVER` | `resend` o `smtp` |
+| `MAIL_FROM` | Direccion visible en `From` (igual para ambos drivers) |
+| `MAIL_FROM_NAME` | Nombre amistoso del remitente |
+| `MAIL_REPLY_TO` | Email humano que recibe respuestas |
+| `RESEND_API_KEY` | Solo si `MAIL_DRIVER=resend`. Generar en resend.com/api-keys |
+| `SMTP_HOST` | Solo si `MAIL_DRIVER=smtp`. Ej `localhost` (cPanel) o `smtp.titan.email` |
 | `SMTP_PORT` | `465` (SSL) o `587` (STARTTLS) |
 | `SMTP_SECURE` | `ssl` o `tls` |
 | `SMTP_USER` | Cuenta autenticada (suele ser el email completo) |
 | `SMTP_PASS` | Password de la cuenta SMTP. **Nunca commitear** |
-| `SMTP_FROM` | Direccion visible en `From`. Normalmente igual a `SMTP_USER` |
-| `SMTP_FROM_NAME` | Nombre amistoso del remitente |
-| `SMTP_REPLY_TO` | Email humano que recibe respuestas cuando alguien contesta un automatico |
+| `SMTP_INSECURE_TLS` | `1` cuando `SMTP_HOST=localhost` en hosting con cert wildcard que no matchea `localhost` |
 
-Si las credenciales SMTP estan vacias o incorrectas, los envios fallan silenciosamente y registran el error en el log de PHP. La app sigue funcionando para clockin/clockout, pero los flujos de invitacion y reset no entregaran emails.
+Si la configuracion esta incompleta los envios fallan silenciosamente y registran el error en el log de PHP. La app sigue funcionando para clockin/clockout, pero invitaciones y reset de password no entregaran emails.
 
 ---
 

@@ -41,7 +41,9 @@ function start_session_secure(): void {
 
     $sessionName = env('SESSION_NAME', 'melius_sid');
     $lifetime = env_int('SESSION_LIFETIME', 28800);
-    $secure = env_bool('COOKIE_SECURE', false);
+    // En produccion forzamos cookie Secure salvo override explicito a false.
+    // En dev local default sigue siendo false para permitir HTTP.
+    $secure = env_bool('COOKIE_SECURE', IS_PROD);
 
     session_name($sessionName);
     session_set_cookie_params([
@@ -62,7 +64,7 @@ function require_login(): array {
     $user = db_one(
         'SELECT id, email, name, role, company_id, timezone,
                 work_start_time, work_end_time, work_days_mask,
-                is_active, status
+                is_active, status, must_change_password
            FROM users WHERE id = ?',
         [$_SESSION['user_id']]
     );
@@ -71,6 +73,19 @@ function require_login(): array {
         err('AUTH_REQUIRED', 'Sesion invalida.', 401);
     }
     return $user;
+}
+
+/**
+ * Gate adicional: bloquea operaciones si el usuario tiene must_change_password
+ * pendiente. Usar en endpoints que registran trabajo o estado (records,
+ * solicitudes). Solo permite cambio de password y auth/me.
+ */
+function require_no_pending_password(): array {
+    $u = require_login();
+    if ((int)($u['must_change_password'] ?? 0) === 1) {
+        err('PASSWORD_CHANGE_REQUIRED', 'Cambia tu contrasena temporal antes de continuar.', 403);
+    }
+    return $u;
 }
 
 function require_admin(): array {
@@ -91,15 +106,88 @@ function require_super_admin(): array {
 }
 
 function client_ip(): string {
-    // Proxies de HostGator pueden setear X-Forwarded-For. En produccion conviene
-    // restringir cuales proxies son de confianza. Aqui aceptamos el primero del header
-    // o caemos a REMOTE_ADDR.
+    // XFF spoofing: cualquier cliente puede enviar X-Forwarded-For. Solo confiamos
+    // en el header si REMOTE_ADDR pertenece a un proxy declarado en .env como
+    // TRUSTED_PROXIES (CSV de IPs o CIDRs). Sin esta variable definida, ignoramos XFF.
+    $remote = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $trustedRaw = trim((string)env('TRUSTED_PROXIES', ''));
+    if ($trustedRaw === '') return $remote;
+
+    $trusted = array_filter(array_map('trim', explode(',', $trustedRaw)));
+    $remoteIsTrustedProxy = false;
+    foreach ($trusted as $entry) {
+        if (str_contains($entry, '/')) {
+            // CIDR
+            if (ip_in_cidr($remote, $entry)) { $remoteIsTrustedProxy = true; break; }
+        } elseif ($remote === $entry) {
+            $remoteIsTrustedProxy = true; break;
+        }
+    }
+    if (!$remoteIsTrustedProxy) return $remote;
+
     $fwd = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
     if ($fwd !== '') {
         $first = trim(explode(',', $fwd)[0]);
         if (filter_var($first, FILTER_VALIDATE_IP)) return $first;
     }
-    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    return $remote;
+}
+
+/**
+ * Rate limit ligero por (scope, key). Cuenta hits en los ultimos $windowSec
+ * segundos. Si supera $maxHits, responde 429 con detalle. Sino registra el hit
+ * y deja continuar. Limpieza ocasional (1% probabilidad) de filas viejas.
+ *
+ * Ejemplos:
+ *   rate_limit_or_block('login', $email, 5, 900);          // 5 intentos / 15min
+ *   rate_limit_or_block('forgot', $email, 3, 900);          // 3 forgot / 15min
+ *   rate_limit_or_block('bulk_invite', (string)$adminId, 5, 3600); // 5/hora
+ */
+function rate_limit_or_block(string $scope, string $key, int $maxHits, int $windowSec): void {
+    if ($key === '') return;
+    try {
+        $driver = Database::pdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $col = $driver === 'mysql' ? '`key`' : 'key';
+        $cutoff = (new DateTimeImmutable("-{$windowSec} seconds"))->format('Y-m-d H:i:s');
+
+        $row = db_one(
+            "SELECT COUNT(*) AS c FROM rate_limits WHERE scope = ? AND {$col} = ? AND hit_at >= ?",
+            [$scope, $key, $cutoff]
+        );
+        $hits = (int)($row['c'] ?? 0);
+        if ($hits >= $maxHits) {
+            err('RATE_LIMITED', "Demasiados intentos. Espera unos minutos antes de reintentar.", 429, [
+                'scope' => $scope,
+                'retry_after_seconds' => $windowSec,
+            ]);
+        }
+        db_exec("INSERT INTO rate_limits (scope, {$col}) VALUES (?, ?)", [$scope, $key]);
+
+        // Limpieza oportunista 1% del tiempo para no inflar la tabla.
+        if (random_int(1, 100) === 1) {
+            $deleteCutoff = (new DateTimeImmutable('-24 hours'))->format('Y-m-d H:i:s');
+            db_exec('DELETE FROM rate_limits WHERE hit_at < ?', [$deleteCutoff]);
+        }
+    } catch (Throwable $e) {
+        // Si la tabla no existe (migracion no aplicada) NO bloqueamos al usuario.
+        // Solo logueamos para debug. Es preferible servir sin throttle a romper login.
+        error_log('[rate_limit] ' . $e->getMessage());
+    }
+}
+
+// Match IPv4 contra CIDR. Si la entrada no parsea, devuelve false defensivamente.
+function ip_in_cidr(string $ip, string $cidr): bool {
+    if (!str_contains($cidr, '/')) return $ip === $cidr;
+    [$subnet, $maskBits] = explode('/', $cidr, 2);
+    $maskBits = (int)$maskBits;
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) return false;
+    if (!filter_var($subnet, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) return false;
+    if ($maskBits < 0 || $maskBits > 32) return false;
+    $ipLong = ip2long($ip);
+    $subnetLong = ip2long($subnet);
+    if ($maskBits === 0) return true;
+    $mask = -1 << (32 - $maskBits);
+    return ($ipLong & $mask) === ($subnetLong & $mask);
 }
 
 function audit_log(?int $userId, string $event, array $metadata = []): void {

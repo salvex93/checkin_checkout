@@ -37,8 +37,9 @@ RedirectMatch 404 /api/lib/
     Header always set X-Frame-Options "DENY"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
-    # HSTS solo activarlo cuando confirmes que HTTPS funciona en TODOS los subdominios
-    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    # HSTS activado: requiere AutoSSL activo en GoDaddy. Si HTTPS no esta
+    # funcional en todos los subdominios, comentar esta linea temporalmente.
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
 
 # Comprimir respuestas

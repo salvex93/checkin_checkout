@@ -22,10 +22,50 @@ CREATE TABLE IF NOT EXISTS brands (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS tenant_settings (
+    id INT PRIMARY KEY,
+    product_name VARCHAR(120) NOT NULL DEFAULT 'Melius Clockin',
+    logo_url VARCHAR(255) NULL,
+    primary_color VARCHAR(9) NOT NULL DEFAULT '#07d6da',
+    secondary_color VARCHAR(9) NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS subscription_plans (
+    code VARCHAR(40) PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    price_monthly_cents INT NOT NULL DEFAULT 0,
+    currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+    max_users INT NULL,
+    max_companies INT NULL,
+    features TEXT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id INT PRIMARY KEY,
+    plan_code VARCHAR(40) NOT NULL DEFAULT 'free',
+    provider VARCHAR(20) NOT NULL DEFAULT 'none',
+    provider_customer_id VARCHAR(120) NULL,
+    provider_subscription_id VARCHAR(120) NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'trial',
+    current_period_start DATETIME NULL,
+    current_period_end DATETIME NULL,
+    cancel_at_period_end TINYINT(1) NOT NULL DEFAULT 0,
+    metadata TEXT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_subscription_plan FOREIGN KEY (plan_code) REFERENCES subscription_plans(code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS companies (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL UNIQUE,
     brand_id INT NULL,
+    branding_logo_url VARCHAR(255) NULL,
+    branding_primary VARCHAR(9) NULL,
+    branding_secondary VARCHAR(9) NULL,
     timezone VARCHAR(64) NOT NULL DEFAULT 'America/Mexico_City',
     work_start_time VARCHAR(5) NOT NULL DEFAULT '09:00',
     work_end_time VARCHAR(5) NOT NULL DEFAULT '18:00',

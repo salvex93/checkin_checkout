@@ -47,3 +47,18 @@ cookies-*.txt
 # Uploads runtime (logos subidos por admin, previews de email).
 # Los logos seed bajo public/assets/brands/ SI se commitean.
 public/uploads/
+
+# PHPUnit
+phpunit.phar
+.phpunit.cache/
+.phpunit.result.cache
+
+# Secretos del deploy (claves SSH, ZIP de deploy, carpeta de staging)
+*.pub
+*.ppk
+id_rsa
+id_rsa.*
+clockin_clockout_rsa
+clockin_clockout_rsa.*
+clockin-deploy.zip
+deploy/

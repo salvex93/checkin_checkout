@@ -2,10 +2,10 @@
 declare(strict_types=1);
 
 // =====================================================================
-// mailer.php — Envio de correo via SMTP (Titan Mail / HostGator).
-// Lee credenciales de .env. Usa PHPMailer vendido en lib/PHPMailer/ para no
-// requerir composer en HostGator. Templates HTML+texto inline para mantener
-// el modulo sin dependencias de motor de plantillas.
+// mailer.php — Envio de correo con dos drivers seleccionables por env:
+//   MAIL_DRIVER=resend  -> API HTTP de Resend (recomendado en produccion)
+//   MAIL_DRIVER=smtp    -> PHPMailer + servidor SMTP (default; util en local)
+// Los templates HTML+texto son los mismos para ambos drivers.
 // =====================================================================
 
 require_once __DIR__ . '/config.php';
@@ -20,9 +20,76 @@ use PHPMailer\PHPMailer\Exception as PHPMailerException;
 
 /**
  * Envio generico. Retorna true en exito, false en fallo (sin lanzar).
- * El llamador decide si el fallo debe ser bloqueante o solo logueable.
+ * Selecciona driver por env MAIL_DRIVER. Fallback a smtp si no esta definido.
  */
 function mail_send(string $to, string $subject, string $html, string $text): bool {
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        error_log('[mailer] destinatario invalido: ' . $to);
+        return false;
+    }
+    $driver = strtolower((string)env('MAIL_DRIVER', 'smtp'));
+    return $driver === 'resend'
+        ? mail_send_resend($to, $subject, $html, $text)
+        : mail_send_smtp($to, $subject, $html, $text);
+}
+
+/**
+ * Driver Resend (HTTPS:443). Documentacion: https://resend.com/docs/api-reference/emails/send-email
+ * Requiere RESEND_API_KEY en .env y dominio verificado en resend.com/domains.
+ */
+function mail_send_resend(string $to, string $subject, string $html, string $text): bool {
+    $apiKey = (string)env('RESEND_API_KEY', '');
+    $from = (string)env('MAIL_FROM', env('SMTP_FROM', ''));
+    $fromName = (string)env('MAIL_FROM_NAME', env('SMTP_FROM_NAME', 'Melius Clockin'));
+    $replyTo = (string)env('MAIL_REPLY_TO', env('SMTP_REPLY_TO', SUPPORT_EMAIL));
+
+    if ($apiKey === '' || $from === '') {
+        error_log('[mailer] Resend mal configurado — falta RESEND_API_KEY o MAIL_FROM');
+        return false;
+    }
+
+    $payload = [
+        'from' => $fromName !== '' ? "{$fromName} <{$from}>" : $from,
+        'to' => [$to],
+        'subject' => $subject,
+        'html' => $html,
+        'text' => $text,
+    ];
+    if ($replyTo !== '') $payload['reply_to'] = $replyTo;
+
+    $ch = curl_init('https://api.resend.com/emails');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 8,
+    ]);
+    $body = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($err !== '') {
+        error_log('[mailer] Resend curl error: ' . $err);
+        return false;
+    }
+    if ($code >= 200 && $code < 300) {
+        return true;
+    }
+    error_log('[mailer] Resend HTTP ' . $code . ' a ' . $to . ': ' . substr((string)$body, 0, 500));
+    return false;
+}
+
+/**
+ * Driver SMTP via PHPMailer. Usado en desarrollo local (MailHog/MailCatcher)
+ * o en hosting que permita SMTP saliente.
+ */
+function mail_send_smtp(string $to, string $subject, string $html, string $text): bool {
     $host = env('SMTP_HOST', '');
     $port = env_int('SMTP_PORT', 465);
     $secure = strtolower((string)env('SMTP_SECURE', 'ssl'));
@@ -34,10 +101,6 @@ function mail_send(string $to, string $subject, string $html, string $text): boo
 
     if ($host === '' || $user === '' || $pass === '' || $from === '') {
         error_log('[mailer] configuracion SMTP incompleta — email no enviado');
-        return false;
-    }
-    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
-        error_log('[mailer] destinatario invalido: ' . $to);
         return false;
     }
 
@@ -54,6 +117,11 @@ function mail_send(string $to, string $subject, string $html, string $text): boo
         } elseif ($secure === 'tls') {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         }
+        if ((string)env('SMTP_INSECURE_TLS', '0') === '1') {
+            $mail->SMTPOptions = [
+                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true],
+            ];
+        }
         $mail->CharSet = 'UTF-8';
         $mail->Encoding = 'base64';
 
@@ -66,8 +134,6 @@ function mail_send(string $to, string $subject, string $html, string $text): boo
         $mail->isHTML(true);
         $mail->Body = $html;
         $mail->AltBody = $text;
-
-        // Timeout corto: si el servidor SMTP no responde, no bloqueamos la API.
         $mail->Timeout = 10;
 
         $mail->send();
@@ -247,6 +313,7 @@ function mail_template_invitation_v2(array $opts): array {
     $passSafe = $tempPassword ? htmlspecialchars($tempPassword, ENT_QUOTES, 'UTF-8') : null;
     $primarySafe = preg_match('/^#[0-9a-fA-F]{3,6}$/', $brandPrimary) ? $brandPrimary : '#07d6da';
     $secondarySafe = preg_match('/^#[0-9a-fA-F]{3,6}$/', $brandSecondary) ? $brandSecondary : '#9909fe';
+    $senderSafe = htmlspecialchars((string)env('SMTP_FROM', 'noreply@meliusservices.com'), ENT_QUOTES, 'UTF-8');
 
     // Prioridad de intro:
     //   1) introOverride explicito (tests/demos)
@@ -347,7 +414,7 @@ HTML;
     <span style="color:#334155;">{$urlSafe}</span>
   </td></tr>
   <tr><td style="padding:14px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;text-align:center;font-family:Segoe UI,Arial,sans-serif;">
-    Enviado por noreply@fullman.tech para {$companySafe} via {$brandNameSafe} Clockin.
+    Enviado por {$senderSafe} para {$companySafe} via {$brandNameSafe} Clockin.
   </td></tr>
 </table>
 </body>

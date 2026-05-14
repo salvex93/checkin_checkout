@@ -14,40 +14,6 @@ require_once __DIR__ . '/mailer.php';
 
 const PASSWORD_RESET_TTL_HOURS = 72;
 
-function auth_register(array $body): never {
-    require_csrf();
-
-    $name = validate_string($body, 'name', 2, 120);
-    $email = validate_email($body, 'email');
-    $password = validate_string($body, 'password', 10, 200);
-    $companyId = validate_int($body, 'company_id', 1, null, false);
-
-    // Validar que la empresa existe (si se proporciono)
-    if ($companyId !== null) {
-        $company = db_one('SELECT id FROM companies WHERE id = ?', [$companyId]);
-        if (!$company) err('INVALID_INPUT', 'Empresa no existe.', 400, ['field' => 'company_id']);
-    }
-
-    // Verificar email duplicado SIN revelar al cliente si ya existe (anti enumeracion)
-    $existing = db_one('SELECT id FROM users WHERE email = ?', [$email]);
-    if ($existing) {
-        // Respuesta deliberadamente identica a la de exito. El usuario que ya existe
-        // recibira el mismo mensaje que el nuevo. Auditoria registra el intento.
-        audit_log(null, 'register_duplicate_email', ['email' => $email]);
-        ok(['message' => 'Registro recibido. Revisa tu email.']);
-    }
-
-    $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
-
-    db_exec(
-        'INSERT INTO users (email, name, password_hash, role, company_id) VALUES (?, ?, ?, ?, ?)',
-        [$email, $name, $hash, 'consultant', $companyId]
-    );
-    $userId = (int)db_last_id();
-    audit_log($userId, 'register_success', ['email' => $email]);
-    ok(['message' => 'Registro recibido. Revisa tu email.']);
-}
-
 function auth_login(array $body): never {
     require_csrf();
 
@@ -226,6 +192,11 @@ function auth_change_password(array $body): never {
 function auth_forgot_password(array $body): never {
     require_csrf();
     $email = validate_email($body, 'email');
+
+    // Rate limit: 3 forgot-password por email en 15 minutos.
+    // Tambien throttle por IP para evitar email-amplification.
+    rate_limit_or_block('forgot_email', $email, 3, 900);
+    rate_limit_or_block('forgot_ip', client_ip(), 10, 900);
 
     $user = db_one('SELECT id, name, status, is_active FROM users WHERE email = ?', [$email]);
     if ($user && (int)$user['is_active'] === 1 && ($user['status'] ?? '') === 'active') {

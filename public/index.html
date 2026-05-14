@@ -9,6 +9,8 @@
 
     <!-- Tailwind via CDN. SRI: en proyectos productivos con build, precompilar a JS plano. -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- ColorThief: extraccion de paleta dominante desde un <img>. Usado en BrandForm. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.umd.js"></script>
     <script>
         // Configuracion Tailwind ANTES del primer paint para evitar flash blanco.
         tailwind.config = {
@@ -193,7 +195,15 @@
                 Moon: <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>,
                 Hourglass: <path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>,
                 AlertTriangle: (<><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>),
-                Spinner: <circle cx="12" cy="12" r="10" strokeDasharray="40" strokeDashoffset="10"/>
+                Spinner: <circle cx="12" cy="12" r="10" strokeDasharray="40" strokeDashoffset="10"/>,
+                Home: <path d="M3 12 12 3l9 9M5 10v10h14V10"/>,
+                Users: (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>),
+                MoreHorizontal: (<><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></>),
+                Building: (<><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></>),
+                Tag: (<><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1"/></>),
+                ChevronDown: <path d="m6 9 6 6 6-6"/>,
+                Bell: (<><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></>),
+                User: (<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>)
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
@@ -273,6 +283,58 @@
         // =====================================================================
         // App principal
         // =====================================================================
+
+        // =====================================================================
+        // Branding context: carga /api/branding al iniciar la app y permite
+        // refresh tras guardar cambios. Se resuelve por cascada con la marca y
+        // overrides cuando el usuario esta logueado (en useEffect de App).
+        // =====================================================================
+
+        const DEFAULT_BRANDING = {
+            product_name: 'Melius Clockin',
+            logo_url: null,
+            primary_color: '#07d6da',
+            secondary_color: '#9909fe',
+        };
+
+        const BrandingContext = React.createContext({
+            branding: DEFAULT_BRANDING,
+            tenantBranding: DEFAULT_BRANDING,
+            setTenantBranding: () => {},
+            refreshBranding: async () => {},
+        });
+
+        const useBranding = () => React.useContext(BrandingContext);
+
+        const BrandingProvider = ({ children }) => {
+            const [tenantBranding, setTenantBranding] = useState(DEFAULT_BRANDING);
+            const refreshBranding = useCallback(async () => {
+                try {
+                    const d = await apiFetch('branding');
+                    if (d?.branding) setTenantBranding({ ...DEFAULT_BRANDING, ...d.branding });
+                } catch (_) { /* publico: si falla, defaults */ }
+            }, []);
+            useEffect(() => { refreshBranding(); }, [refreshBranding]);
+
+            return (
+                <BrandingContext.Provider value={{ branding: tenantBranding, tenantBranding, setTenantBranding, refreshBranding }}>
+                    {children}
+                </BrandingContext.Provider>
+            );
+        };
+
+        // Resuelve el branding efectivo para un usuario: empresa override > marca > tenant.
+        // Acepta currentUser (con campos brand_*) y un companyBranding opcional.
+        const resolveEffectiveBranding = (tenant, currentUser, companyOverride) => {
+            const co = companyOverride || {};
+            const u = currentUser || {};
+            return {
+                product_name: tenant.product_name || DEFAULT_BRANDING.product_name,
+                logo_url: co.branding_logo_url || u.brand_logo_url || tenant.logo_url || null,
+                primary_color: co.branding_primary || u.brand_primary || tenant.primary_color || DEFAULT_BRANDING.primary_color,
+                secondary_color: co.branding_secondary || u.brand_secondary || tenant.secondary_color || DEFAULT_BRANDING.secondary_color,
+            };
+        };
 
         const App = () => {
             const { push: toast } = useToast();
@@ -1020,19 +1082,53 @@
 
         const AdminPanel = ({ currentUser, onLogout, theme, onToggleTheme, onGoDashboard }) => {
             const { push: toast } = useToast();
+            const { tenantBranding } = useBranding();
             const isSuper = currentUser.role === 'super_admin';
-            const tabs = [
-                { id: 'dashboard', label: 'Dashboard' },
-                { id: 'records', label: 'Registros' },
-                ...(isSuper ? [{ id: 'brands', label: 'Marcas' }] : []),
-                { id: 'companies', label: 'Empresas' },
-                { id: 'agents', label: 'Agentes' },
-                { id: 'changes', label: 'Cambios' },
-                { id: 'overtime', label: 'Extras' },
-                { id: 'admins', label: 'Admins' },
+            // Branding efectivo: empresa-override (si la hay) > marca paraguas > tenant.
+            const effective = resolveEffectiveBranding(tenantBranding, currentUser, null);
+
+            // Tabs primarios (visibles siempre en desktop, en bottom-nav movil) y
+            // secundarios (dropdown "Mas" en desktop, dentro del drawer "Mas" en movil).
+            const primaryTabs = [
+                { id: 'dashboard', label: 'Dashboard', icon: 'Home' },
+                { id: 'records', label: 'Registros', icon: 'FileText' },
+                { id: 'agents', label: 'Agentes', icon: 'Users' },
+                { id: 'requests', label: 'Solicitudes', icon: 'Bell' },
             ];
+            const secondaryTabs = [
+                ...(isSuper ? [{ id: 'brands', label: 'Marcas', icon: 'Tag' }] : []),
+                { id: 'companies', label: 'Empresas', icon: 'Building' },
+                { id: 'admins', label: 'Admins', icon: 'ShieldCheck' },
+                ...(isSuper ? [{ id: 'tenant', label: 'Configuracion', icon: 'Lock' }] : []),
+            ];
+
             const [activeTab, setActiveTab] = useState('dashboard');
+            // Subtab del bucket "requests" agrupado: cambios u extras.
+            const [requestsSub, setRequestsSub] = useState('changes');
             const [counts, setCounts] = useState({ changes: 0, overtime: 0 });
+            const [moreOpen, setMoreOpen] = useState(false);
+            const [userMenuOpen, setUserMenuOpen] = useState(false);
+            const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+            const moreRef = useRef(null);
+            const userDesktopRef = useRef(null);
+            const userMobileRef = useRef(null);
+
+            const totalRequests = counts.changes + counts.overtime;
+
+            // Cerrar dropdowns al hacer click fuera. Se valida contra los DOS refs
+            // (desktop y movil) porque solo uno esta en el DOM segun breakpoint, pero
+            // el handler debe respetar ambos para no cerrar el dropdown al hacer click
+            // dentro del mismo. Si NINGUNO contiene el target, cerramos.
+            useEffect(() => {
+                const onDocClick = (e) => {
+                    if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false);
+                    const insideDesktop = userDesktopRef.current?.contains(e.target);
+                    const insideMobile = userMobileRef.current?.contains(e.target);
+                    if (!insideDesktop && !insideMobile) setUserMenuOpen(false);
+                };
+                document.addEventListener('mousedown', onDocClick);
+                return () => document.removeEventListener('mousedown', onDocClick);
+            }, []);
 
             const refreshCounts = useCallback(async () => {
                 try {
@@ -1045,47 +1141,212 @@
             }, []);
             useEffect(() => { refreshCounts(); }, [refreshCounts]);
 
+            const goTab = (id) => {
+                setActiveTab(id);
+                setMoreOpen(false);
+                setMobileMoreOpen(false);
+            };
+
+            // Util: button primario para desktop top bar.
+            const PrimaryTabButton = ({ tab }) => {
+                const active = activeTab === tab.id;
+                const badge = tab.id === 'requests' && totalRequests > 0;
+                return (
+                    <button onClick={() => goTab(tab.id)}
+                        className={`shrink-0 px-3 lg:px-4 py-2 rounded-xl text-xs lg:text-sm font-bold flex items-center gap-2 transition-all relative ${active ? 'btn-melius shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}>
+                        <Icon name={tab.icon} size={16} />
+                        <span>{tab.label}</span>
+                        {badge && <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">{totalRequests}</span>}
+                    </button>
+                );
+            };
+
             return (
-                <div className="max-w-6xl w-full flex flex-col gap-4 sm:gap-6">
-                    <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 gap-4">
-                        <div className="flex items-center gap-3 sm:gap-4">
+                <div className="max-w-6xl w-full flex flex-col gap-4 sm:gap-6 pb-24 md:pb-0">
+                    {/* HEADER */}
+                    <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 gap-4">
+                        {/* Logo + titulo */}
+                        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                             <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 ring-melius flex items-center justify-center p-1.5 shrink-0">
-                                <img src={currentUser.brand_logo_url || '/assets/brands/melius.webp'} alt={currentUser.brand_name || 'Melius Services'} className="w-full h-full object-contain" />
+                                <img src={effective.logo_url || '/assets/brands/melius.webp'} alt={effective.product_name} className="w-full h-full object-contain" />
                             </div>
-                            <div>
-                                <h2 className="font-black text-lg sm:text-xl text-slate-800 dark:text-slate-100 font-display">{currentUser.brand_name || 'Melius'} Admin Console</h2>
-                                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest">{isSuper ? 'Super administrador' : 'Administrador'} &middot; {currentUser.name}</p>
+                            <div className="min-w-0">
+                                <h2 className="font-black text-lg sm:text-xl text-slate-800 dark:text-slate-100 font-display truncate">{effective.product_name}</h2>
+                                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest truncate">{isSuper ? 'Super administrador' : 'Administrador'} &middot; {currentUser.name}</p>
                             </div>
                         </div>
-                        <div className="flex gap-2 items-center justify-start md:justify-end overflow-x-auto custom-scrollbar -mx-2 px-2 md:overflow-visible md:flex-wrap">
-                            {tabs.map(t => (
-                                <button key={t.id} onClick={() => setActiveTab(t.id)}
-                                    className={`shrink-0 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all ${activeTab === t.id ? 'btn-melius shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}>
-                                    {t.label}
-                                    {t.id === 'changes' && counts.changes > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
-                                    {t.id === 'overtime' && counts.overtime > 0 && <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />}
+
+                        {/* Tabs desktop (md+) */}
+                        <div className="hidden md:flex gap-2 items-center flex-wrap justify-end">
+                            {primaryTabs.map(t => <PrimaryTabButton key={t.id} tab={t} />)}
+                            {/* Dropdown Mas */}
+                            <div className="relative" ref={moreRef}>
+                                <button onClick={() => setMoreOpen(o => !o)}
+                                    className={`shrink-0 px-3 lg:px-4 py-2 rounded-xl text-xs lg:text-sm font-bold flex items-center gap-2 transition-all ${secondaryTabs.some(s => s.id === activeTab) ? 'btn-melius shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}>
+                                    <Icon name="MoreHorizontal" size={16} />
+                                    <span>Mas</span>
+                                    <Icon name="ChevronDown" size={14} />
                                 </button>
-                            ))}
-                            <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-                            {onGoDashboard && (
-                                <button onClick={onGoDashboard}
-                                    title="Volver a la vista de empleado para marcar jornada"
-                                    className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 transition-all">
-                                    &larr; Mi jornada
+                                {moreOpen && (
+                                    <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-30">
+                                        {secondaryTabs.map(t => (
+                                            <button key={t.id} onClick={() => goTab(t.id)}
+                                                className={`w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 transition-all ${activeTab === t.id ? 'bg-cyan-50 dark:bg-cyan-900/20 text-melius-cyan' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                                                <Icon name={t.icon} size={16} />
+                                                {t.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Menu usuario */}
+                            <div className="relative ml-1" ref={userDesktopRef}>
+                                <button onClick={() => setUserMenuOpen(o => !o)}
+                                    className="shrink-0 pl-2 pr-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs lg:text-sm font-bold flex items-center gap-2 transition-all">
+                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-melius-cyan to-melius-violet flex items-center justify-center text-white font-black text-xs">
+                                        {(currentUser.name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="max-w-[110px] truncate text-slate-600 dark:text-slate-200">{currentUser.name?.split(' ')[0] || 'Usuario'}</span>
+                                    <Icon name="ChevronDown" size={14} className="text-slate-400" />
                                 </button>
+                                {userMenuOpen && (
+                                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-30">
+                                        <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+                                            <div className="text-xs text-slate-400">Sesion activa</div>
+                                            <div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{currentUser.email || currentUser.name}</div>
+                                        </div>
+                                        {onGoDashboard && (
+                                            <button onClick={() => { setUserMenuOpen(false); onGoDashboard(); }}
+                                                className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-melius-cyan hover:bg-cyan-50 dark:hover:bg-cyan-900/20">
+                                                <Icon name="Clock" size={16} />
+                                                Mi jornada
+                                            </button>
+                                        )}
+                                        <button onClick={() => { setUserMenuOpen(false); onToggleTheme(); }}
+                                            className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                            <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} />
+                                            {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+                                        </button>
+                                        <div className="border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
+                                            <button onClick={() => { setUserMenuOpen(false); onLogout(); }}
+                                                className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                                <Icon name="LogOut" size={16} />
+                                                Cerrar sesion
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Movil: solo avatar/menu (los tabs van en bottom nav) */}
+                        <div className="md:hidden relative" ref={userMobileRef}>
+                            <button onClick={() => setUserMenuOpen(o => !o)}
+                                className="w-10 h-10 rounded-full bg-gradient-to-br from-melius-cyan to-melius-violet flex items-center justify-center text-white font-black">
+                                {(currentUser.name || '?').charAt(0).toUpperCase()}
+                            </button>
+                            {userMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-30">
+                                    <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="text-xs text-slate-400">Sesion activa</div>
+                                        <div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{currentUser.email || currentUser.name}</div>
+                                    </div>
+                                    {onGoDashboard && (
+                                        <button onClick={() => { setUserMenuOpen(false); onGoDashboard(); }}
+                                            className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-melius-cyan hover:bg-cyan-50 dark:hover:bg-cyan-900/20">
+                                            <Icon name="Clock" size={16} />
+                                            Mi jornada
+                                        </button>
+                                    )}
+                                    <button onClick={() => { setUserMenuOpen(false); onToggleTheme(); }}
+                                        className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                        <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} />
+                                        {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+                                    </button>
+                                    <div className="border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
+                                        <button onClick={() => { setUserMenuOpen(false); onLogout(); }}
+                                            className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                            <Icon name="LogOut" size={16} />
+                                            Cerrar sesion
+                                        </button>
+                                    </div>
+                                </div>
                             )}
-                            <button onClick={onLogout} className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-300">Salir</button>
                         </div>
                     </div>
 
+                    {/* Sub-toggle dentro de Solicitudes: cambios | extras */}
+                    {activeTab === 'requests' && (
+                        <div className="flex gap-2 bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-100 dark:border-slate-800 w-full sm:w-auto self-start">
+                            <button onClick={() => setRequestsSub('changes')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${requestsSub === 'changes' ? 'btn-melius' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                                <Icon name="ArrowLeftRight" size={14} />
+                                Cambios
+                                {counts.changes > 0 && <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{counts.changes}</span>}
+                            </button>
+                            <button onClick={() => setRequestsSub('overtime')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${requestsSub === 'overtime' ? 'btn-melius' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                                <Icon name="Hourglass" size={14} />
+                                Extras
+                                {counts.overtime > 0 && <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center">{counts.overtime}</span>}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* CONTENIDO */}
                     {activeTab === 'dashboard' && <DashboardTab />}
                     {activeTab === 'records' && <RecordsTab isSuper={isSuper} />}
+                    {activeTab === 'agents' && <AgentsTab isSuper={isSuper} />}
+                    {activeTab === 'requests' && requestsSub === 'changes' && <ChangesTab onChange={refreshCounts} />}
+                    {activeTab === 'requests' && requestsSub === 'overtime' && <OvertimeTab onChange={refreshCounts} />}
                     {activeTab === 'brands' && isSuper && <BrandsTab />}
                     {activeTab === 'companies' && <CompaniesTab isSuper={isSuper} />}
-                    {activeTab === 'agents' && <AgentsTab isSuper={isSuper} />}
-                    {activeTab === 'changes' && <ChangesTab onChange={refreshCounts} />}
-                    {activeTab === 'overtime' && <OvertimeTab onChange={refreshCounts} />}
                     {activeTab === 'admins' && <AdminsTab currentUser={currentUser} isSuper={isSuper} />}
+                    {activeTab === 'tenant' && isSuper && <ConfigurationTab />}
+
+                    {/* BOTTOM NAV MOVIL */}
+                    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-2 py-1 z-40 flex justify-around" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
+                        {primaryTabs.map(t => {
+                            const active = activeTab === t.id;
+                            const badge = t.id === 'requests' && totalRequests > 0;
+                            return (
+                                <button key={t.id} onClick={() => goTab(t.id)}
+                                    className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-all relative ${active ? 'text-melius-cyan' : 'text-slate-400 dark:text-slate-500'}`}>
+                                    <Icon name={t.icon} size={20} />
+                                    <span className="text-[10px] font-bold">{t.label}</span>
+                                    {badge && <span className="absolute top-0 right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{totalRequests}</span>}
+                                    {active && <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-melius-cyan"></span>}
+                                </button>
+                            );
+                        })}
+                        <button onClick={() => setMobileMoreOpen(true)}
+                            className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-all relative ${secondaryTabs.some(s => s.id === activeTab) ? 'text-melius-cyan' : 'text-slate-400 dark:text-slate-500'}`}>
+                            <Icon name="MoreHorizontal" size={20} />
+                            <span className="text-[10px] font-bold">Mas</span>
+                        </button>
+                    </nav>
+
+                    {/* DRAWER MOVIL "MAS" */}
+                    {mobileMoreOpen && (
+                        <div className="md:hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end" onClick={() => setMobileMoreOpen(false)}>
+                            <div className="bg-white dark:bg-slate-900 w-full rounded-t-3xl p-4 space-y-1 anim-zoom-in" onClick={e => e.stopPropagation()}>
+                                <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-3"></div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 pb-1">Configuracion</p>
+                                {secondaryTabs.map(t => (
+                                    <button key={t.id} onClick={() => goTab(t.id)}
+                                        className={`w-full text-left px-3 py-3 text-sm font-bold flex items-center gap-3 rounded-xl ${activeTab === t.id ? 'bg-cyan-50 dark:bg-cyan-900/20 text-melius-cyan' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                                        <Icon name={t.icon} size={18} />
+                                        {t.label}
+                                    </button>
+                                ))}
+                                <button onClick={() => setMobileMoreOpen(false)}
+                                    className="w-full mt-2 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -1354,6 +1615,377 @@
             return payload.data;
         }
 
+        // Wrapper de configuracion con sub-tabs: Branding | Licencia.
+        // Solo super_admin lo ve (montaje gated en AdminPanel).
+        const ConfigurationTab = () => {
+            const [section, setSection] = useState('branding');
+            return (
+                <div className="space-y-4">
+                    <div className="flex gap-2 bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-100 dark:border-slate-800 w-full sm:w-auto self-start">
+                        <button onClick={() => setSection('branding')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${section === 'branding' ? 'btn-melius' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                            Branding
+                        </button>
+                        <button onClick={() => setSection('billing')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${section === 'billing' ? 'btn-melius' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                            Licencia
+                        </button>
+                    </div>
+                    {section === 'branding' && <TenantSettingsTab />}
+                    {section === 'billing' && <BillingTab />}
+                </div>
+            );
+        };
+
+        // Formatea monto en centavos como precio legible: 2900 -> "$29.00 USD/mes".
+        const formatMonthly = (cents, currency) => {
+            if (!cents) return 'Bajo cotizacion';
+            const v = (cents / 100).toFixed(cents % 100 === 0 ? 0 : 2);
+            return `$${v} ${currency}/mes`;
+        };
+
+        const BillingTab = () => {
+            const { push: toast } = useToast();
+            const [plans, setPlans] = useState([]);
+            const [sub, setSub] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [submitting, setSubmitting] = useState(false);
+            const [connectModal, setConnectModal] = useState(null);
+
+            const load = useCallback(async () => {
+                setLoading(true);
+                try {
+                    const [pr, sr] = await Promise.all([
+                        apiFetch('admin/billing/plans'),
+                        apiFetch('admin/billing/subscription'),
+                    ]);
+                    setPlans(pr.plans || []);
+                    setSub(sr.subscription || null);
+                } catch (e) { toast('error', e.message); }
+                finally { setLoading(false); }
+            }, []);
+            useEffect(() => { load(); }, [load]);
+
+            const changePlan = async (planCode) => {
+                if (!confirm(`Cambiar plan a "${planCode}"? Se aplicara de forma manual (sin cobro).`)) return;
+                setSubmitting(true);
+                try {
+                    const r = await apiFetch('admin/billing/subscription', { method: 'PUT', body: { plan_code: planCode } });
+                    setSub(r.subscription);
+                    toast('success', 'Plan actualizado.');
+                } catch (e) { toast('error', e.message); }
+                finally { setSubmitting(false); }
+            };
+
+            const connectProvider = async (provider) => {
+                setSubmitting(true);
+                try {
+                    await apiFetch('admin/billing/connect', { method: 'POST', body: { provider } });
+                    toast('success', `${provider} conectado.`);
+                    setConnectModal(null);
+                    load();
+                } catch (e) {
+                    // Esperamos NOT_IMPLEMENTED 501 con next_steps.
+                    setConnectModal({ provider, steps: e.next_steps || [e.message] });
+                }
+                finally { setSubmitting(false); }
+            };
+
+            if (loading) return <LoadingScreen />;
+
+            const statusColor = {
+                trial: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+                active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+                past_due: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+                canceled: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+                suspended: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+            }[sub?.status || 'trial'] || 'bg-slate-100 text-slate-700';
+
+            return (
+                <div className="space-y-4">
+                    <div>
+                        <h3 className="font-black text-lg text-slate-800 dark:text-slate-100">Licencia mensual</h3>
+                        <p className="text-xs text-slate-500">Plan, estado de la suscripcion y conexion con pasarela de pago.</p>
+                    </div>
+
+                    {/* Estado actual */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div>
+                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Plan actual</div>
+                                <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{sub?.plan_name || 'Trial'}</div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                    {sub?.price_monthly_cents ? formatMonthly(sub.price_monthly_cents, sub.currency) : 'Sin costo (trial)'}
+                                </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5">
+                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusColor}`}>
+                                    {sub?.status || 'trial'}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                    {sub?.provider === 'none' ? 'Sin pasarela conectada' : `Pasarela: ${sub?.provider}`}
+                                </span>
+                            </div>
+                        </div>
+                        {sub?.features && <p className="text-xs text-slate-500 mt-3">{sub.features}</p>}
+                    </div>
+
+                    {/* Catalogo de planes */}
+                    <div>
+                        <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Planes disponibles</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                            {plans.map(p => {
+                                const current = sub?.plan_code === p.code;
+                                return (
+                                    <div key={p.code} className={`rounded-2xl border p-4 ${current ? 'border-melius-cyan bg-cyan-50 dark:bg-cyan-900/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'}`}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="font-black text-slate-800 dark:text-slate-100">{p.name}</div>
+                                            {current && <span className="text-[10px] font-black uppercase tracking-widest text-melius-cyan">Actual</span>}
+                                        </div>
+                                        <div className="text-xl font-black text-slate-800 dark:text-slate-100 mt-2">{formatMonthly(p.price_monthly_cents, p.currency)}</div>
+                                        {p.features && <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">{p.features}</p>}
+                                        <ul className="text-[11px] text-slate-500 mt-2 space-y-0.5">
+                                            <li>Usuarios: <strong>{p.max_users ?? 'sin limite'}</strong></li>
+                                            <li>Empresas: <strong>{p.max_companies ?? 'sin limite'}</strong></li>
+                                        </ul>
+                                        {!current && (
+                                            <button onClick={() => changePlan(p.code)} disabled={submitting}
+                                                className="mt-3 w-full py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs disabled:opacity-60">
+                                                Asignar manualmente
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Conexion con pasarela */}
+                    <div>
+                        <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Pasarela de pago</h4>
+                        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 space-y-3">
+                            <p className="text-xs text-slate-500">
+                                Conecta una pasarela para cobrar mensualmente de forma automatica. Por ahora la suscripcion se gestiona de forma manual.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <button onClick={() => connectProvider('stripe')} disabled={submitting}
+                                    className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-2">
+                                    Conectar Stripe
+                                </button>
+                                <button onClick={() => connectProvider('paypal')} disabled={submitting}
+                                    className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2">
+                                    Conectar PayPal
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Modal de instrucciones para conectar pasarela */}
+                    <Modal open={!!connectModal} onClose={() => setConnectModal(null)} title="Conectar pasarela" maxWidth="max-w-lg">
+                        {connectModal && (
+                            <div className="space-y-3">
+                                <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">Conectar {connectModal.provider}</h3>
+                                <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/40 p-4 text-sm text-amber-800 dark:text-amber-200">
+                                    <p className="font-bold mb-2">Integracion pendiente</p>
+                                    <p className="text-xs">La conexion real con {connectModal.provider} esta lista a nivel de modelo de datos pero requiere credenciales API. Pasos:</p>
+                                </div>
+                                <ol className="list-decimal list-inside text-xs text-slate-600 dark:text-slate-300 space-y-2 pl-2">
+                                    {connectModal.steps.map((s, i) => <li key={i}>{s}</li>)}
+                                </ol>
+                                <button onClick={() => setConnectModal(null)} className="w-full py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Entendido</button>
+                            </div>
+                        )}
+                    </Modal>
+                </div>
+            );
+        };
+
+        // Configuracion white-label del tenant (solo super_admin).
+        // Permite editar nombre del producto, logo y colores que aplican al UI base.
+        // Si el tenant no tiene logo aun, mostramos el logo Melius default como
+        // referencia visual para que el super_admin sepa cual reemplazar.
+        const DEFAULT_TENANT_LOGO = '/assets/brands/melius.webp';
+
+        const TenantSettingsTab = () => {
+            const { push: toast } = useToast();
+            const { tenantBranding, setTenantBranding, refreshBranding } = useBranding();
+            const [form, setForm] = useState({
+                product_name: tenantBranding.product_name,
+                primary_color: tenantBranding.primary_color,
+                secondary_color: tenantBranding.secondary_color || '',
+            });
+            const [logoFile, setLogoFile] = useState(null);
+            const [logoPreview, setLogoPreview] = useState(tenantBranding.logo_url || DEFAULT_TENANT_LOGO);
+            const [hasCustomLogo, setHasCustomLogo] = useState(!!tenantBranding.logo_url);
+            const [submitting, setSubmitting] = useState(false);
+            const fileRef = useRef(null);
+
+            useEffect(() => {
+                (async () => {
+                    try {
+                        const d = await apiFetch('admin/tenant-settings');
+                        if (d?.tenant) {
+                            setForm({
+                                product_name: d.tenant.product_name,
+                                primary_color: d.tenant.primary_color,
+                                secondary_color: d.tenant.secondary_color || '',
+                            });
+                            setHasCustomLogo(!!d.tenant.logo_url);
+                            setLogoPreview(d.tenant.logo_url || DEFAULT_TENANT_LOGO);
+                        }
+                    } catch (e) { toast('error', e.message); }
+                })();
+            }, []);
+
+            const pickFile = (f) => {
+                if (!f) return;
+                if (f.size > 512 * 1024) { toast('error', 'Logo supera 512 KB.'); return; }
+                if (!['image/png','image/jpeg','image/webp','image/svg+xml'].includes(f.type)) {
+                    toast('error', 'Formato no soportado. PNG, JPG, WebP o SVG.');
+                    return;
+                }
+                setLogoFile(f);
+                setLogoPreview(URL.createObjectURL(f));
+                setHasCustomLogo(true);
+            };
+
+            const save = async () => {
+                setSubmitting(true);
+                try {
+                    const body = {
+                        product_name: form.product_name.trim(),
+                        primary_color: form.primary_color,
+                        secondary_color: form.secondary_color || null,
+                    };
+                    const r = await apiFetch('admin/tenant-settings', { method: 'PUT', body });
+                    if (logoFile) {
+                        const fd = new FormData();
+                        fd.append('logo', logoFile);
+                        const lr = await apiUpload('admin/tenant-settings/logo', fd);
+                        setLogoFile(null);
+                        if (lr?.logo_url) { setLogoPreview(lr.logo_url); setHasCustomLogo(true); }
+                    }
+                    // Refresca el context para que UI cambie en vivo.
+                    if (r?.tenant) setTenantBranding(prev => ({ ...prev, ...r.tenant }));
+                    await refreshBranding();
+                    toast('success', 'Configuracion del tenant guardada.');
+                } catch (e) { toast('error', e.message || 'Error al guardar.'); }
+                finally { setSubmitting(false); }
+            };
+
+            const gradient = form.secondary_color
+                ? `linear-gradient(135deg, ${form.primary_color} 0%, ${form.secondary_color} 100%)`
+                : form.primary_color;
+
+            return (
+                <div className="space-y-4">
+                    <div>
+                        <h3 className="font-black text-lg text-slate-800 dark:text-slate-100">Branding del producto</h3>
+                        <p className="text-xs text-slate-500">Personaliza nombre, logo y colores que se ven antes del login y en el header del admin console. Aplica a toda la instalacion. Las marcas paraguas (NetFy, Fullman) y los emails de invitacion no cambian.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        {/* Columna izquierda: form */}
+                        <div className="space-y-4">
+                            <fieldset className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
+                                <legend className="px-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Identidad del producto</legend>
+                                <label className="block">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre del producto</span>
+                                    <input maxLength="120" value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })}
+                                        className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold" />
+                                    <p className="text-[10px] text-slate-400 mt-1">Aparece en el header (ej. "Melius Clockin", "NetFy Clockin", "Acme Time").</p>
+                                </label>
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo</span>
+                                    <div className="mt-1 flex items-center gap-3">
+                                        <div className="w-16 h-16 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center p-1.5 shrink-0 relative">
+                                            <img src={logoPreview} alt="logo" className="w-full h-full object-contain" />
+                                            {!hasCustomLogo && !logoFile && (
+                                                <span className="absolute -top-2 -right-2 text-[8px] font-black uppercase tracking-widest bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded">default</span>
+                                            )}
+                                        </div>
+                                        <button type="button" onClick={() => fileRef.current?.click()}
+                                            className="px-3 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 font-bold text-xs">
+                                            {logoFile ? 'Cambiar' : (hasCustomLogo ? 'Reemplazar' : 'Subir logo')}
+                                        </button>
+                                        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
+                                            onChange={(e) => pickFile(e.target.files?.[0])} />
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1">PNG, JPG, WebP o SVG. Max 512 KB. {!hasCustomLogo && 'Estas viendo el logo default Melius — sube uno para personalizar.'}</p>
+                                </div>
+                            </fieldset>
+
+                            <fieldset className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
+                                <legend className="px-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Colores base del UI</legend>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <label className="block">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Primario</span>
+                                        <div className="mt-1 flex items-center gap-2">
+                                            <input type="color" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
+                                                className="w-14 h-12 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                            <div className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm uppercase">
+                                                {form.primary_color}
+                                            </div>
+                                        </div>
+                                    </label>
+                                    <label className="block">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Secundario</span>
+                                        <div className="mt-1 flex items-center gap-2">
+                                            <input type="color" value={form.secondary_color || '#9909fe'} onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
+                                                className="w-14 h-12 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                            <div className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm uppercase">
+                                                {form.secondary_color || '—'}
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                                <p className="text-[10px] text-slate-400">Estos colores aplican al gradiente del login y al boton primario. Cada empresa puede sobrescribirlos en su propia configuracion.</p>
+                            </fieldset>
+
+                            <button type="button" onClick={save} disabled={submitting}
+                                className="w-full py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
+                                {submitting && <Icon name="Spinner" size={18} />}
+                                Guardar configuracion
+                            </button>
+                        </div>
+
+                        {/* Columna derecha: preview UI */}
+                        <div className="space-y-2">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Vista previa</span>
+                            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900 p-3">
+                                {/* Preview header app */}
+                                <div className="rounded-xl bg-white border border-slate-200 p-3 flex items-center gap-3 mb-2">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center p-1 shrink-0">
+                                        {logoPreview ? <img src={logoPreview} alt="logo" className="w-full h-full object-contain" /> : <Icon name="ShieldCheck" size={20} className="text-slate-400" />}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="font-black text-slate-800 truncate text-sm">{form.product_name || 'Producto'}</div>
+                                        <div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">Admin Console</div>
+                                    </div>
+                                </div>
+                                {/* Preview login hero */}
+                                <div className="rounded-xl overflow-hidden">
+                                    <div style={{ background: gradient, color: '#fff', padding: '20px 18px', textAlign: 'center' }}>
+                                        {logoPreview && <div style={{ marginBottom: 8 }}>
+                                            <img src={logoPreview} alt="logo" style={{ width: 44, height: 44, borderRadius: 10, background: '#fff', padding: 4, objectFit: 'contain', display: 'inline-block' }} />
+                                        </div>}
+                                        <div style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.92, fontWeight: 700 }}>{(form.product_name || 'PRODUCTO').toUpperCase()}</div>
+                                        <div style={{ fontSize: 18, fontWeight: 800, marginTop: 6 }}>Iniciar sesion</div>
+                                    </div>
+                                    <div style={{ padding: '14px 16px', background: '#fff', textAlign: 'center' }}>
+                                        <span style={{ display: 'inline-block', padding: '9px 22px', background: form.primary_color, color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 800 }}>
+                                            Entrar
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-slate-400">El cambio se aplicara en vivo despues de guardar.</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const BrandsTab = () => {
             const { push: toast } = useToast();
             const [rows, setRows] = useState([]);
@@ -1417,13 +2049,11 @@
                                         </div>
                                         <div className="min-w-0">
                                             <h4 className="font-black text-slate-800 dark:text-slate-100 truncate">{b.name}</h4>
-                                            <p className="text-[10px] font-mono text-slate-400 truncate">slug: {b.slug}</p>
-                                            <div className="flex items-center gap-1.5 mt-1.5">
-                                                <span title={b.primary_color} className="w-5 h-5 rounded-full border border-white shadow-sm" style={{ backgroundColor: b.primary_color }}></span>
-                                                {b.secondary_color && <span title={b.secondary_color} className="w-5 h-5 rounded-full border border-white shadow-sm" style={{ backgroundColor: b.secondary_color }}></span>}
-                                                <span className="text-[10px] font-mono text-slate-500 ml-1">{b.primary_color}{b.secondary_color ? ' / ' + b.secondary_color : ''}</span>
+                                            <div className="flex items-center gap-1.5 mt-2">
+                                                <span title="Color primario" className="w-6 h-6 rounded-full border-2 border-white shadow ring-1 ring-slate-200 dark:ring-slate-700" style={{ backgroundColor: b.primary_color }}></span>
+                                                {b.secondary_color && <span title="Color secundario" className="w-6 h-6 rounded-full border-2 border-white shadow ring-1 ring-slate-200 dark:ring-slate-700" style={{ backgroundColor: b.secondary_color }}></span>}
                                             </div>
-                                            <p className="text-[11px] text-slate-500 mt-1">{b.companies_count} empresa{b.companies_count === 1 ? '' : 's'} vinculadas</p>
+                                            <p className="text-[11px] text-slate-500 mt-2">{b.companies_count} empresa{b.companies_count === 1 ? '' : 's'} vinculadas</p>
                                             {!b.is_active && <span className="inline-block mt-1 text-[10px] font-black uppercase tracking-widest text-red-500">Inactiva</span>}
                                         </div>
                                     </div>
@@ -1436,15 +2066,18 @@
                         ))}
                         {rows.length === 0 && <EmptyState message="Sin marcas aun" />}
                     </div>
-                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva marca" maxWidth="max-w-2xl">
+                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva marca" maxWidth="max-w-4xl">
                         <BrandForm onSave={(b, file) => save(b, null, file)} onCancel={() => setCreating(false)} />
                     </Modal>
-                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar marca" maxWidth="max-w-2xl">
+                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar marca" maxWidth="max-w-4xl">
                         {editing && <BrandForm initial={editing} onSave={(b, file) => save(b, editing.id, file)} onCancel={() => setEditing(null)} />}
                     </Modal>
                 </div>
             );
         };
+
+        // Convierte un componente RGB [0..255] a string hex "#rrggbb".
+        const rgbToHex = (r, g, b) => '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
 
         const BrandForm = ({ initial, onSave, onCancel }) => {
             const [form, setForm] = useState(() => ({
@@ -1456,7 +2089,10 @@
             const [logoFile, setLogoFile] = useState(null);
             const [logoPreview, setLogoPreview] = useState(initial?.logo_url || '');
             const [submitting, setSubmitting] = useState(false);
+            const [showAdvanced, setShowAdvanced] = useState(false);
+            const [extracting, setExtracting] = useState(false);
             const fileRef = useRef(null);
+            const logoImgRef = useRef(null);
 
             const pickFile = (f) => {
                 if (!f) return;
@@ -1467,6 +2103,32 @@
                 }
                 setLogoFile(f);
                 setLogoPreview(URL.createObjectURL(f));
+            };
+
+            // Extrae paleta dominante del logo usando ColorThief. SVG no es soportado
+            // por canvas en algunos navegadores; en ese caso avisamos sin tirar error.
+            const extractColorsFromLogo = () => {
+                if (!logoPreview) { alert('Sube un logo primero.'); return; }
+                if (typeof ColorThief === 'undefined') { alert('Extractor de colores no disponible.'); return; }
+                setExtracting(true);
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    try {
+                        const ct = new ColorThief();
+                        const palette = ct.getPalette(img, 5) || [];
+                        if (palette.length === 0) { alert('No se pudo extraer la paleta.'); return; }
+                        const primary = rgbToHex(palette[0][0], palette[0][1], palette[0][2]);
+                        const secondary = palette[1] ? rgbToHex(palette[1][0], palette[1][1], palette[1][2]) : form.secondary_color;
+                        setForm(prev => ({ ...prev, primary_color: primary, secondary_color: secondary }));
+                    } catch (e) {
+                        alert('No se pudo extraer la paleta. Si el logo es SVG, prueba con PNG o JPG.');
+                    } finally {
+                        setExtracting(false);
+                    }
+                };
+                img.onerror = () => { setExtracting(false); alert('No se pudo cargar el logo para analizar.'); };
+                img.src = logoPreview;
             };
 
             const submit = async (e) => {
@@ -1483,62 +2145,154 @@
                 } finally { setSubmitting(false); }
             };
 
+            // Intro preview: replica la prioridad del backend (welcome_intro > fallback).
+            const previewIntro = form.welcome_intro.trim()
+                ? form.welcome_intro.trim()
+                : `Tu equipo esta usando ${form.name || 'la plataforma'} Clockin para marcar jornada de forma sencilla. Acabas de ser invitado a sumarte.`;
+            const gradient = form.secondary_color
+                ? `linear-gradient(135deg, ${form.primary_color} 0%, ${form.secondary_color} 100%)`
+                : form.primary_color;
+
             return (
                 <form onSubmit={submit} className="space-y-4">
                     <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{initial ? 'Editar marca' : 'Nueva marca'}</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <label className="block sm:col-span-3">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre de la marca</span>
-                            <input required maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold" />
-                        </label>
-                        <label className="block">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Color primario</span>
-                            <div className="mt-1 flex items-center gap-2">
-                                <input type="color" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
-                                    className="w-12 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
-                                <input type="text" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
-                                    pattern="^#[0-9a-fA-F]{3,6}$" required
-                                    className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-sm" />
-                            </div>
-                        </label>
-                        <label className="block">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Color secundario (opcional)</span>
-                            <div className="mt-1 flex items-center gap-2">
-                                <input type="color" value={form.secondary_color || '#9909fe'} onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
-                                    className="w-12 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
-                                <input type="text" value={form.secondary_color} onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
-                                    pattern="^#[0-9a-fA-F]{3,6}$|^$"
-                                    placeholder="vacio = sin gradiente"
-                                    className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-sm" />
-                            </div>
-                        </label>
-                        <label className="block">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo</span>
-                            <div className="mt-1 flex items-center gap-3">
-                                {logoPreview && (
-                                    <div className="w-14 h-14 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center p-1.5 shrink-0">
-                                        <img src={logoPreview} alt="preview" className="w-full h-full object-contain" />
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        {/* COLUMNA IZQUIERDA: edicion */}
+                        <div className="space-y-4">
+                            {/* Bloque 1: Identidad */}
+                            <fieldset className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
+                                <legend className="px-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Identidad</legend>
+                                <label className="block">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre de la marca</span>
+                                    <input required maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                        className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold" />
+                                </label>
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo</span>
+                                    <div className="mt-1 flex items-center gap-3">
+                                        {logoPreview && (
+                                            <div className="w-16 h-16 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center p-1.5 shrink-0">
+                                                <img ref={logoImgRef} src={logoPreview} alt="preview" className="w-full h-full object-contain" />
+                                            </div>
+                                        )}
+                                        <button type="button" onClick={() => fileRef.current?.click()}
+                                            className="px-3 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 font-bold text-xs">
+                                            {logoFile ? 'Cambiar' : (logoPreview ? 'Reemplazar' : 'Seleccionar')}
+                                        </button>
+                                        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
+                                            onChange={(e) => pickFile(e.target.files?.[0])} />
                                     </div>
-                                )}
-                                <button type="button" onClick={() => fileRef.current?.click()}
-                                    className="px-3 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 font-bold text-xs">
-                                    {logoFile ? 'Cambiar' : (logoPreview ? 'Reemplazar' : 'Seleccionar')}
+                                    <p className="text-[10px] text-slate-400 mt-1">PNG, JPG, WebP o SVG. Max 512 KB.</p>
+                                </div>
+                            </fieldset>
+
+                            {/* Bloque 2: Branding visual */}
+                            <fieldset className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
+                                <legend className="px-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Colores de marca</legend>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <label className="block">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Primario</span>
+                                        <div className="mt-1 flex items-center gap-2">
+                                            <input type="color" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
+                                                className="w-14 h-12 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                            <div className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm uppercase">
+                                                {form.primary_color}
+                                            </div>
+                                        </div>
+                                    </label>
+                                    <label className="block">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Secundario</span>
+                                        <div className="mt-1 flex items-center gap-2">
+                                            <input type="color" value={form.secondary_color || '#9909fe'} onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
+                                                className="w-14 h-12 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                            <div className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-sm uppercase">
+                                                {form.secondary_color || '—'}
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                                <button type="button" onClick={extractColorsFromLogo} disabled={!logoPreview || extracting}
+                                    className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 border border-slate-200 dark:border-slate-600 font-bold text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50 flex items-center justify-center gap-2">
+                                    {extracting ? 'Analizando logo...' : 'Sugerir colores desde el logo'}
                                 </button>
-                                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
-                                    onChange={(e) => pickFile(e.target.files?.[0])} />
+                                <p className="text-[10px] text-slate-400">Detectamos los dos colores dominantes del logo. Puedes ajustarlos despues.</p>
+                            </fieldset>
+
+                            {/* Bloque 3: Mensaje */}
+                            <fieldset className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-2">
+                                <legend className="px-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Mensaje de bienvenida</legend>
+                                <textarea value={form.welcome_intro} rows="4" maxLength="2000"
+                                    onChange={(e) => setForm({ ...form, welcome_intro: e.target.value })}
+                                    placeholder="Si lo dejas vacio, usamos un saludo generico con el nombre de la empresa."
+                                    className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm" />
+                                <p className="text-[10px] text-slate-400">{form.welcome_intro.length}/2000 caracteres. Aparece en el correo de invitacion.</p>
+                            </fieldset>
+
+                            {/* Acordeon: detalles tecnicos */}
+                            <button type="button" onClick={() => setShowAdvanced(s => !s)}
+                                className="text-[11px] font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline">
+                                {showAdvanced ? 'Ocultar detalles tecnicos' : 'Mostrar detalles tecnicos'}
+                            </button>
+                            {showAdvanced && (
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3 space-y-2 text-xs">
+                                    {initial?.slug && (
+                                        <div className="flex justify-between">
+                                            <span className="font-black uppercase tracking-widest text-slate-400 text-[10px]">Slug</span>
+                                            <span className="font-mono text-slate-600 dark:text-slate-300">{initial.slug}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between">
+                                        <span className="font-black uppercase tracking-widest text-slate-400 text-[10px]">Hex primario</span>
+                                        <input type="text" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
+                                            pattern="^#[0-9a-fA-F]{3,6}$" required
+                                            className="font-mono text-xs px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="font-black uppercase tracking-widest text-slate-400 text-[10px]">Hex secundario</span>
+                                        <input type="text" value={form.secondary_color || ''} onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
+                                            pattern="^#[0-9a-fA-F]{3,6}$|^$"
+                                            className="font-mono text-xs px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* COLUMNA DERECHA: preview email */}
+                        <div className="space-y-2">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Vista previa del correo de invitacion</span>
+                            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900 p-3">
+                                <div className="rounded-xl overflow-hidden bg-white border border-slate-200" style={{ fontFamily: 'Segoe UI, Arial, sans-serif' }}>
+                                    {/* Hero gradient */}
+                                    <div style={{ background: gradient, color: '#fff', padding: '24px 20px', textAlign: 'center' }}>
+                                        {logoPreview && (
+                                            <div style={{ marginBottom: 10 }}>
+                                                <img src={logoPreview} alt="logo" style={{ width: 56, height: 56, borderRadius: 12, background: '#fff', padding: 5, objectFit: 'contain', display: 'inline-block' }} />
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.92, fontWeight: 700 }}>{(form.name || 'Marca').toUpperCase()} CLOCKIN</div>
+                                        <div style={{ fontSize: 20, fontWeight: 800, marginTop: 8 }}>Bienvenido a bordo</div>
+                                        <div style={{ fontSize: 12, marginTop: 6, opacity: 0.95 }}>Marca jornada en segundos. Sin Excel. Sin friccion.</div>
+                                    </div>
+                                    {/* Body */}
+                                    <div style={{ padding: '18px 20px', fontSize: 13, color: '#1f2937', lineHeight: 1.55 }}>
+                                        <p style={{ margin: '0 0 6px 0' }}>Hola <strong>[Nombre del consultor]</strong>,</p>
+                                        <p style={{ margin: '0 0 6px 0', whiteSpace: 'pre-line' }}>{previewIntro}</p>
+                                    </div>
+                                    {/* CTA */}
+                                    <div style={{ padding: '4px 20px 18px 20px', textAlign: 'center' }}>
+                                        <span style={{ display: 'inline-block', padding: '10px 22px', background: form.primary_color, color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 800 }}>
+                                            Entrar a {form.name || 'la plataforma'} Clockin
+                                        </span>
+                                    </div>
+                                    <div style={{ padding: '10px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: 10, color: '#64748b', textAlign: 'center' }}>
+                                        Enviado por noreply@fullman.tech via {form.name || 'la plataforma'} Clockin.
+                                    </div>
+                                </div>
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-1">PNG, JPG, WebP o SVG. Max 512 KB.</p>
-                        </label>
+                            <p className="text-[10px] text-slate-400">Aproximacion visual. El correo real usa tablas HTML compatibles con Gmail/Outlook.</p>
+                        </div>
                     </div>
-                    <label className="block">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mensaje de bienvenida (aparece en el correo de invitacion)</span>
-                        <textarea value={form.welcome_intro} rows="4" maxLength="2000"
-                            onChange={(e) => setForm({ ...form, welcome_intro: e.target.value })}
-                            placeholder="Si lo dejas vacio, usamos un saludo generico con el nombre de la empresa. Ejemplo: En Fullman creemos en disciplinar la jornada para que tu tiempo cuente. Bienvenido al equipo."
-                            className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm" />
-                        <p className="text-[10px] text-slate-400 mt-1">{form.welcome_intro.length}/2000 caracteres</p>
-                    </label>
+
                     <div className="flex gap-2 pt-2">
                         <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cancelar</button>
                         <button type="submit" disabled={submitting} className="flex-1 py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
@@ -1557,6 +2311,7 @@
             const [error, setError] = useState(null);
             const [editing, setEditing] = useState(null);
             const [creating, setCreating] = useState(false);
+            const [brandingTarget, setBrandingTarget] = useState(null);
             const load = useCallback(async () => {
                 setLoading(true); setError(null);
                 try { const d = await apiFetch('admin/companies'); setRows(d.companies || []); }
@@ -1608,8 +2363,9 @@
                                             <p className="text-[11px] text-slate-500 mt-1">Agentes activos: {c.active_users}</p>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2 shrink-0">
+                                    <div className="flex flex-col gap-1 shrink-0 items-end">
                                         <button onClick={() => setEditing(c)} className="text-xs font-bold text-blue-600 hover:underline">Editar</button>
+                                        <button onClick={() => setBrandingTarget(c)} className="text-xs font-bold text-purple-600 hover:underline" title="Sobrescribir colores y logo solo para esta empresa">Branding</button>
                                         {isSuper && c.active_users === 0 && <button onClick={() => remove(c)} className="text-xs font-bold text-red-500 hover:underline">Eliminar</button>}
                                     </div>
                                 </div>
@@ -1625,65 +2381,319 @@
                         <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Editar empresa</h3>
                         {editing && <CompanyForm initial={editing} onSave={save} onCancel={() => setEditing(null)} />}
                     </Modal>
+                    <Modal open={!!brandingTarget} onClose={() => setBrandingTarget(null)} title="Branding de empresa" maxWidth="max-w-3xl">
+                        {brandingTarget && <CompanyBrandingForm company={brandingTarget} onClose={() => setBrandingTarget(null)} onSaved={() => { setBrandingTarget(null); load(); }} />}
+                    </Modal>
                 </div>
+            );
+        };
+
+        // Modal de override de branding por empresa. Permite sobrescribir colores
+        // sobre la marca paraguas o el tenant. Si todos los campos se dejan vacios,
+        // la empresa vuelve a heredar del nivel superior.
+        const CompanyBrandingForm = ({ company, onClose, onSaved }) => {
+            const { push: toast } = useToast();
+            const { tenantBranding } = useBranding();
+            const [primary, setPrimary] = useState(company.branding_primary || '');
+            const [secondary, setSecondary] = useState(company.branding_secondary || '');
+            const [logoUrl, setLogoUrl] = useState(company.branding_logo_url || '');
+            const [submitting, setSubmitting] = useState(false);
+
+            // Cascada: que esta heredando esta empresa antes de aplicar override?
+            const inheritedPrimary = company.brand_primary || tenantBranding.primary_color;
+            const inheritedSecondary = company.brand_secondary || tenantBranding.secondary_color;
+            const inheritedLogo = company.brand_logo_url || tenantBranding.logo_url || '/assets/brands/melius.webp';
+            const inheritedSource = company.brand_name ? `marca "${company.brand_name}"` : 'tenant';
+
+            // Branding efectivo en este momento (lo que se ve si guardamos).
+            const effPrimary = primary || inheritedPrimary;
+            const effSecondary = secondary || inheritedSecondary;
+            const effLogo = logoUrl || inheritedLogo;
+            const gradient = effSecondary ? `linear-gradient(135deg, ${effPrimary} 0%, ${effSecondary} 100%)` : effPrimary;
+
+            const save = async () => {
+                setSubmitting(true);
+                try {
+                    await apiFetch(`admin/companies/${company.id}/branding`, {
+                        method: 'PUT',
+                        body: {
+                            branding_primary: primary || null,
+                            branding_secondary: secondary || null,
+                            branding_logo_url: logoUrl || null,
+                        }
+                    });
+                    toast('success', 'Branding guardado.');
+                    onSaved();
+                } catch (e) { toast('error', e.message || 'Error al guardar.'); }
+                finally { setSubmitting(false); }
+            };
+
+            const reset = () => {
+                setPrimary(''); setSecondary(''); setLogoUrl('');
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div>
+                        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">Branding de {company.name}</h3>
+                        <p className="text-xs text-slate-500">Sobrescribe el branding heredado (de {inheritedSource}). Deja todos los campos vacios para volver al heredado.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        {/* Form */}
+                        <div className="space-y-4">
+                            <fieldset className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
+                                <legend className="px-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Colores override</legend>
+                                <label className="block">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Primario (deja vacio = heredar {inheritedPrimary})</span>
+                                    <div className="mt-1 flex items-center gap-2">
+                                        <input type="color" value={primary || inheritedPrimary} onChange={(e) => setPrimary(e.target.value)}
+                                            className="w-14 h-12 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                        <input type="text" value={primary} onChange={(e) => setPrimary(e.target.value)}
+                                            placeholder={inheritedPrimary}
+                                            pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$|^$"
+                                            className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-sm uppercase" />
+                                    </div>
+                                </label>
+                                <label className="block">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Secundario (deja vacio = heredar {inheritedSecondary || 'ninguno'})</span>
+                                    <div className="mt-1 flex items-center gap-2">
+                                        <input type="color" value={secondary || inheritedSecondary || '#9909fe'} onChange={(e) => setSecondary(e.target.value)}
+                                            className="w-14 h-12 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                        <input type="text" value={secondary} onChange={(e) => setSecondary(e.target.value)}
+                                            placeholder={inheritedSecondary || '—'}
+                                            pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$|^$"
+                                            className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-sm uppercase" />
+                                    </div>
+                                </label>
+                            </fieldset>
+
+                            <fieldset className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-2">
+                                <legend className="px-2 text-[11px] font-black uppercase tracking-widest text-slate-500">Logo override (URL)</legend>
+                                <input type="text" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)}
+                                    placeholder={`Heredado: ${inheritedLogo}`}
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-xs" />
+                                <p className="text-[10px] text-slate-400">URL absoluta o relativa al sitio. Upload de archivo por empresa se agregara despues. Deja vacio para heredar.</p>
+                            </fieldset>
+
+                            <button type="button" onClick={reset}
+                                className="text-[11px] font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline">
+                                Limpiar todo y volver al branding heredado
+                            </button>
+                        </div>
+
+                        {/* Preview */}
+                        <div className="space-y-2">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Preview</span>
+                            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900 p-3 space-y-2">
+                                <div className="rounded-xl bg-white border border-slate-200 p-3 flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center p-1 shrink-0">
+                                        <img src={effLogo} alt="logo" className="w-full h-full object-contain" onError={(e) => { e.target.src = '/assets/brands/melius.webp'; }} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="font-black text-slate-800 truncate text-sm">{tenantBranding.product_name}</div>
+                                        <div className="text-[9px] uppercase tracking-widest text-slate-400 font-bold">{company.name}</div>
+                                    </div>
+                                </div>
+                                <div className="rounded-xl overflow-hidden">
+                                    <div style={{ background: gradient, color: '#fff', padding: '14px 16px', textAlign: 'center' }}>
+                                        <div style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.92, fontWeight: 700 }}>{company.name.toUpperCase()}</div>
+                                        <div style={{ fontSize: 14, fontWeight: 800, marginTop: 4 }}>Vista del UI con tu branding</div>
+                                    </div>
+                                    <div style={{ padding: '10px 14px', background: '#fff', textAlign: 'center' }}>
+                                        <span style={{ display: 'inline-block', padding: '7px 16px', background: effPrimary, color: '#fff', borderRadius: 7, fontSize: 11, fontWeight: 800 }}>
+                                            Entrar
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                        <button type="button" onClick={onClose} disabled={submitting}
+                            className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200 disabled:opacity-60">
+                            Cancelar
+                        </button>
+                        <button type="button" onClick={save} disabled={submitting}
+                            className="flex-1 py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Guardar branding
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // Modal de confirmacion previo al envio de invitacion. Muestra destinatario,
+        // empresa+marca y un mini-preview del email con los colores reales de la marca.
+        const InviteConfirmModal = ({ open, payload, company, onConfirm, onCancel, submitting }) => {
+            if (!open || !payload) return null;
+            const primary = company?.brand_primary || '#07d6da';
+            const secondary = company?.brand_secondary || '#9909fe';
+            const gradient = `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`;
+            const brandName = company?.brand_name || 'Melius';
+            const logoUrl = company?.brand_logo_url || null;
+            const intro = (company?.brand_welcome && company.brand_welcome.trim())
+                ? company.brand_welcome.trim()
+                : `Tu equipo en ${company?.name || 'tu empresa'} esta usando ${brandName} Clockin para marcar jornada de forma sencilla.`;
+            const roleLabel = payload.role === 'admin' ? 'Administrador' : 'Consultor';
+
+            return (
+                <Modal open={open} onClose={onCancel} title="Confirmar invitacion" maxWidth="max-w-3xl">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Resumen destinatario */}
+                        <div className="space-y-3">
+                            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+                                <div className="text-[11px] font-black uppercase tracking-widest text-slate-500">Destinatario</div>
+                                <div>
+                                    <div className="text-xs text-slate-400">Correo</div>
+                                    <div className="font-bold text-slate-800 dark:text-slate-100 truncate">{payload.email}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-slate-400">Nombre</div>
+                                    <div className="font-bold text-slate-800 dark:text-slate-100">{payload.name}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-slate-400">Rol</div>
+                                    <div className="font-bold text-slate-800 dark:text-slate-100">{roleLabel}</div>
+                                </div>
+                                {company && (
+                                    <div>
+                                        <div className="text-xs text-slate-400">Empresa / Marca</div>
+                                        <div className="font-bold text-slate-800 dark:text-slate-100">{company.name}{company.brand_name ? ` — ${company.brand_name}` : ''}</div>
+                                    </div>
+                                )}
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                                Al confirmar se creara la cuenta con una contrasena temporal y se enviara el correo de invitacion al destinatario. El usuario debera cambiar su contrasena al ingresar.
+                            </p>
+                        </div>
+
+                        {/* Mini-preview del email */}
+                        <div className="space-y-2">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Vista previa</span>
+                            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900 p-3">
+                                <div className="rounded-xl overflow-hidden bg-white border border-slate-200" style={{ fontFamily: 'Segoe UI, Arial, sans-serif' }}>
+                                    <div style={{ background: gradient, color: '#fff', padding: '20px 18px', textAlign: 'center' }}>
+                                        {logoUrl && (
+                                            <div style={{ marginBottom: 8 }}>
+                                                <img src={logoUrl} alt={brandName} style={{ width: 48, height: 48, borderRadius: 10, background: '#fff', padding: 4, objectFit: 'contain', display: 'inline-block' }} />
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.92, fontWeight: 700 }}>{brandName.toUpperCase()} CLOCKIN</div>
+                                        <div style={{ fontSize: 18, fontWeight: 800, marginTop: 6 }}>Bienvenido a bordo, {payload.name.split(' ')[0]}</div>
+                                    </div>
+                                    <div style={{ padding: '14px 18px', fontSize: 12, color: '#1f2937', lineHeight: 1.55 }}>
+                                        <p style={{ margin: '0 0 6px 0' }}>Hola <strong>{payload.name}</strong>,</p>
+                                        <p style={{ margin: '0 0 6px 0', whiteSpace: 'pre-line' }}>{intro}</p>
+                                    </div>
+                                    <div style={{ padding: '4px 18px 16px 18px', textAlign: 'center' }}>
+                                        <span style={{ display: 'inline-block', padding: '9px 20px', background: primary, color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 800 }}>
+                                            Entrar a {brandName} Clockin
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-4">
+                        <button type="button" onClick={onCancel} disabled={submitting}
+                            className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200 disabled:opacity-60">
+                            Volver
+                        </button>
+                        <button type="button" onClick={onConfirm} disabled={submitting}
+                            className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Confirmar y enviar
+                        </button>
+                    </div>
+                </Modal>
             );
         };
 
         const InviteForm = ({ defaultRole, isSuper, onSave, onCancel }) => {
             const [companies, setCompanies] = useState([]);
             const [form, setForm] = useState({ email: '', name: '', role: defaultRole, company_id: '' });
+            const [confirmOpen, setConfirmOpen] = useState(false);
+            const [pendingPayload, setPendingPayload] = useState(null);
             const [submitting, setSubmitting] = useState(false);
             useEffect(() => { apiFetch('admin/companies').then(d => setCompanies(d.companies || [])).catch(() => {}); }, []);
-            const submit = async (e) => {
+
+            // Submit del form: NO envia al backend todavia. Solo prepara payload y abre confirm.
+            const submit = (e) => {
                 e.preventDefault();
+                const body = { email: form.email.trim(), name: form.name.trim(), role: form.role };
+                if (form.company_id) body.company_id = parseInt(form.company_id, 10);
+                setPendingPayload(body);
+                setConfirmOpen(true);
+            };
+
+            const confirmInvite = async () => {
+                if (!pendingPayload) return;
                 setSubmitting(true);
                 try {
-                    const body = { email: form.email, name: form.name, role: form.role };
-                    if (form.company_id) body.company_id = parseInt(form.company_id, 10);
-                    await onSave(body);
+                    await onSave(pendingPayload);
+                    setConfirmOpen(false);
+                    setPendingPayload(null);
                 } finally { setSubmitting(false); }
             };
+
+            const selectedCompany = pendingPayload?.company_id
+                ? companies.find(c => c.id === pendingPayload.company_id) || null
+                : null;
+
             return (
-                <form onSubmit={submit} className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <label className="block">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Correo</span>
-                            <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
-                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium" />
-                        </label>
-                        <label className="block">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre</span>
-                            <input required minLength="2" maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium" />
-                        </label>
-                        {isSuper && (
+                <>
+                    <form onSubmit={submit} className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <label className="block">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rol</span>
-                                <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Correo</span>
+                                <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                    className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium" />
+                            </label>
+                            <label className="block">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre</span>
+                                <input required minLength="2" maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                    className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium" />
+                            </label>
+                            {isSuper && (
+                                <label className="block">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rol</span>
+                                    <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
+                                        className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
+                                        <option value="consultant">Consultor</option>
+                                        <option value="admin">Administrador</option>
+                                    </select>
+                                </label>
+                            )}
+                            <label className="block">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Empresa</span>
+                                <select value={form.company_id} onChange={(e) => setForm({ ...form, company_id: e.target.value })}
                                     className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
-                                    <option value="consultant">Consultor</option>
-                                    <option value="admin">Administrador</option>
+                                    <option value="">— Sin empresa —</option>
+                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}{c.brand_name ? ` — ${c.brand_name}` : ''}</option>)}
                                 </select>
                             </label>
-                        )}
-                        <label className="block">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Empresa</span>
-                            <select value={form.company_id} onChange={(e) => setForm({ ...form, company_id: e.target.value })}
-                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
-                                <option value="">— Sin empresa —</option>
-                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                        </label>
-                    </div>
-                    <p className="text-[11px] text-slate-500">Se enviara un correo con una contrasena temporal. El usuario debera cambiarla al ingresar.</p>
-                    <div className="flex gap-2">
-                        <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cancelar</button>
-                        <button type="submit" disabled={submitting} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2">
-                            {submitting && <Icon name="Spinner" size={18} />}
-                            Enviar invitacion
-                        </button>
-                    </div>
-                </form>
+                        </div>
+                        <p className="text-[11px] text-slate-500">Se enviara un correo con una contrasena temporal. Revisaras el resumen antes de confirmar.</p>
+                        <div className="flex gap-2">
+                            <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cancelar</button>
+                            <button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black hover:bg-blue-700 flex items-center justify-center gap-2">
+                                Revisar invitacion
+                            </button>
+                        </div>
+                    </form>
+                    <InviteConfirmModal
+                        open={confirmOpen}
+                        payload={pendingPayload}
+                        company={selectedCompany}
+                        submitting={submitting}
+                        onConfirm={confirmInvite}
+                        onCancel={() => { if (!submitting) { setConfirmOpen(false); setPendingPayload(null); } }}
+                    />
+                </>
             );
         };
 
@@ -1784,6 +2794,202 @@
             );
         };
 
+        // Parser CSV minimo y tolerante. Solo soporta delimitadores , y ;
+        // y comillas dobles para escapar. Devuelve array de objetos por header.
+        const parseCsvLight = (raw) => {
+            const text = String(raw || '').replace(/\r\n?/g, '\n').trim();
+            if (!text) return { headers: [], rows: [] };
+            const lines = text.split('\n').filter(l => l.trim() !== '');
+            const delim = (lines[0].includes(';') && !lines[0].includes(',')) ? ';' : ',';
+            const splitLine = (line) => {
+                const out = []; let cur = ''; let inQ = false;
+                for (let i = 0; i < line.length; i++) {
+                    const ch = line[i];
+                    if (ch === '"') { inQ = !inQ; continue; }
+                    if (ch === delim && !inQ) { out.push(cur); cur = ''; continue; }
+                    cur += ch;
+                }
+                out.push(cur);
+                return out.map(s => s.trim());
+            };
+            const headers = splitLine(lines[0]).map(h => h.toLowerCase());
+            const rows = lines.slice(1).map((line, idx) => {
+                const cells = splitLine(line);
+                const obj = { _row: idx + 2 };
+                headers.forEach((h, i) => { obj[h] = cells[i] !== undefined ? cells[i] : ''; });
+                return obj;
+            });
+            return { headers, rows };
+        };
+
+        // Modal de confirmacion para carga masiva. Muestra resumen, avisos y un
+        // mini-preview por cada marca detectada (con tabs si hay mas de una).
+        const BulkConfirmModal = ({ open, parsed, companies, defaultCompanyId, isSuper, onConfirm, onCancel, submitting }) => {
+            const [activeTab, setActiveTab] = useState(0);
+            useEffect(() => { setActiveTab(0); }, [open]);
+            if (!open || !parsed) return null;
+
+            const totalRows = parsed.rows.length;
+            const defaultCompany = defaultCompanyId
+                ? companies.find(c => c.id === parseInt(defaultCompanyId, 10))
+                : null;
+
+            // Resolver empresa por fila: prioridad company (col) > default. Empresa no
+            // resuelta = aviso. Email/name vacios = aviso. Email mal = aviso.
+            const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            const seen = new Set();
+            const enriched = parsed.rows.map(r => {
+                const issues = [];
+                const email = (r.email || '').trim().toLowerCase();
+                const name = (r.name || '').trim();
+                if (!email) issues.push('email vacio');
+                else if (!emailRe.test(email)) issues.push('email invalido');
+                else if (seen.has(email)) issues.push('email duplicado en CSV');
+                seen.add(email);
+                if (!name || name.length < 2) issues.push('nombre vacio o muy corto');
+
+                let company = null;
+                const companyName = (r.company || '').trim().toLowerCase();
+                if (companyName) {
+                    company = companies.find(c => c.name.toLowerCase() === companyName) || null;
+                    if (!company) issues.push(`empresa "${r.company}" no existe`);
+                } else if (defaultCompany) {
+                    company = defaultCompany;
+                } else if (isSuper) {
+                    issues.push('sin empresa y sin default');
+                }
+                return { ...r, _email: email, _name: name, _company: company, _issues: issues };
+            });
+
+            // Agrupar por marca (empresa.brand_id). Filas sin company resuelta caen en bucket "_unassigned".
+            const groups = new Map();
+            enriched.forEach(r => {
+                if (!r._company) return;
+                const key = r._company.brand_id ? `brand:${r._company.brand_id}` : `nobrand:${r._company.id}`;
+                if (!groups.has(key)) {
+                    groups.set(key, {
+                        company: r._company,
+                        brand_name: r._company.brand_name || '(sin marca)',
+                        brand_primary: r._company.brand_primary,
+                        brand_secondary: r._company.brand_secondary,
+                        brand_logo_url: r._company.brand_logo_url,
+                        brand_welcome: r._company.brand_welcome,
+                        rows: [],
+                    });
+                }
+                groups.get(key).rows.push(r);
+            });
+            const groupList = Array.from(groups.values());
+            const issueRows = enriched.filter(r => r._issues.length > 0);
+            const okCount = enriched.length - issueRows.length;
+
+            const activeGroup = groupList[activeTab] || null;
+            const primary = activeGroup?.brand_primary || '#07d6da';
+            const secondary = activeGroup?.brand_secondary || '#9909fe';
+            const gradient = `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`;
+            const brandName = activeGroup?.brand_name || 'Melius';
+            const sampleRow = activeGroup?.rows[0];
+            const intro = (activeGroup?.brand_welcome && activeGroup.brand_welcome.trim())
+                ? activeGroup.brand_welcome.trim()
+                : `Tu equipo en ${activeGroup?.company.name || 'tu empresa'} esta usando ${brandName} Clockin para marcar jornada de forma sencilla.`;
+
+            return (
+                <Modal open={open} onClose={onCancel} title="Revisar carga masiva" maxWidth="max-w-4xl">
+                    <div className="space-y-4">
+                        {/* Resumen */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/40 p-3 text-center">
+                                <div className="text-2xl font-black text-emerald-700 dark:text-emerald-300">{okCount}</div>
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Listos</div>
+                            </div>
+                            <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/40 p-3 text-center">
+                                <div className="text-2xl font-black text-amber-700 dark:text-amber-300">{issueRows.length}</div>
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-amber-700 dark:text-amber-300">Con avisos</div>
+                            </div>
+                            <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 p-3 text-center">
+                                <div className="text-2xl font-black text-blue-700 dark:text-blue-300">{groupList.length}</div>
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-blue-700 dark:text-blue-300">Marcas</div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-3 text-center">
+                                <div className="text-2xl font-black text-slate-700 dark:text-slate-200">{totalRows}</div>
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Filas totales</div>
+                            </div>
+                        </div>
+
+                        {/* Avisos */}
+                        {issueRows.length > 0 && (
+                            <div className="rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-900/10 p-3 max-h-40 overflow-auto">
+                                <p className="text-[11px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300 mb-2">Avisos por fila</p>
+                                <div className="text-xs space-y-1 font-mono">
+                                    {issueRows.slice(0, 20).map((r, i) => (
+                                        <div key={i} className="text-amber-800 dark:text-amber-200">
+                                            Fila {r._row}: {r._email || '(sin email)'} — {r._issues.join(', ')}
+                                        </div>
+                                    ))}
+                                    {issueRows.length > 20 && <div className="text-amber-700 dark:text-amber-400 italic">... y {issueRows.length - 20} mas. Estas filas se enviaran de todas formas; el reporte final mostrara el detalle.</div>}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tabs por marca + preview */}
+                        {groupList.length > 0 && (
+                            <div>
+                                <div className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-700">
+                                    {groupList.map((g, i) => (
+                                        <button key={i} type="button" onClick={() => setActiveTab(i)}
+                                            className={`px-3 py-2 text-xs font-bold border-b-2 transition-all ${activeTab === i ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                                            {g.brand_name} <span className="opacity-60">({g.rows.length})</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                {activeGroup && sampleRow && (
+                                    <div className="mt-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 p-3">
+                                        <div className="rounded-xl overflow-hidden bg-white border border-slate-200" style={{ fontFamily: 'Segoe UI, Arial, sans-serif' }}>
+                                            <div style={{ background: gradient, color: '#fff', padding: '18px 16px', textAlign: 'center' }}>
+                                                {activeGroup.brand_logo_url && (
+                                                    <div style={{ marginBottom: 8 }}>
+                                                        <img src={activeGroup.brand_logo_url} alt={brandName} style={{ width: 44, height: 44, borderRadius: 10, background: '#fff', padding: 4, objectFit: 'contain', display: 'inline-block' }} />
+                                                    </div>
+                                                )}
+                                                <div style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.92, fontWeight: 700 }}>{brandName.toUpperCase()} CLOCKIN</div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, marginTop: 6 }}>Bienvenido a bordo, {sampleRow._name.split(' ')[0] || 'Nombre'}</div>
+                                            </div>
+                                            <div style={{ padding: '12px 16px', fontSize: 11, color: '#1f2937', lineHeight: 1.5 }}>
+                                                <p style={{ margin: '0 0 4px 0' }}>Hola <strong>{sampleRow._name || '[Nombre]'}</strong>,</p>
+                                                <p style={{ margin: '0 0 6px 0', whiteSpace: 'pre-line' }}>{intro}</p>
+                                            </div>
+                                            <div style={{ padding: '2px 16px 12px 16px', textAlign: 'center' }}>
+                                                <span style={{ display: 'inline-block', padding: '7px 16px', background: primary, color: '#fff', borderRadius: 8, fontSize: 11, fontWeight: 800 }}>
+                                                    Entrar a {brandName} Clockin
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-2">Preview con datos de la primera fila de esta marca. Cada consultor recibira su propio correo personalizado.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <p className="text-[11px] text-slate-500">
+                            Al confirmar se crearan {okCount} cuentas con contrasena temporal. Las {issueRows.length > 0 ? `${issueRows.length} filas con avisos se enviaran tambien al servidor y` : 'filas'} apareceran en el reporte final si fallan.
+                        </p>
+
+                        <div className="flex gap-2 pt-2">
+                            <button type="button" onClick={onCancel} disabled={submitting}
+                                className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200 disabled:opacity-60">
+                                Volver
+                            </button>
+                            <button type="button" onClick={onConfirm} disabled={submitting || totalRows === 0}
+                                className="flex-1 py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
+                                {submitting && <Icon name="Spinner" size={18} />}
+                                Confirmar y procesar
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            );
+        };
+
         const BulkInviteForm = ({ isSuper, companies, onClose, onDone }) => {
             const { push: toast } = useToast();
             const [csv, setCsv] = useState('');
@@ -1791,6 +2997,8 @@
             const [submitting, setSubmitting] = useState(false);
             const [report, setReport] = useState(null);
             const [dragOver, setDragOver] = useState(false);
+            const [confirmOpen, setConfirmOpen] = useState(false);
+            const [parsed, setParsed] = useState(null);
             const fileInputRef = useRef(null);
 
             const downloadTemplate = async () => {
@@ -1823,8 +3031,17 @@
                 if (f) readFile(f);
             };
 
-            const submit = async () => {
+            // Paso 1: abrir confirmacion con resumen y mini-preview por marca.
+            const openConfirm = () => {
                 if (!csv.trim()) { toast('error', 'Pega o carga un CSV primero.'); return; }
+                const p = parseCsvLight(csv);
+                if (p.rows.length === 0) { toast('error', 'El CSV no contiene filas validas.'); return; }
+                setParsed(p);
+                setConfirmOpen(true);
+            };
+
+            // Paso 2: confirmacion -> POST real al backend.
+            const submit = async () => {
                 setSubmitting(true);
                 setReport(null);
                 try {
@@ -1832,6 +3049,7 @@
                     if (defaultCompanyId) body.default_company_id = parseInt(defaultCompanyId, 10);
                     const r = await apiFetch('admin/users/bulk-invite', { method: 'POST', body });
                     setReport(r);
+                    setConfirmOpen(false);
                     if ((r.summary?.created || 0) > 0) {
                         toast('success', `${r.summary.created} consultores creados.`);
                     } else {
@@ -1930,11 +3148,21 @@
                         {report?.summary?.created > 0 && (
                             <button onClick={onDone} className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-black hover:bg-emerald-700">Listo, recargar lista</button>
                         )}
-                        <button onClick={submit} disabled={submitting || !csv.trim()} className="flex-1 py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
+                        <button onClick={openConfirm} disabled={submitting || !csv.trim()} className="flex-1 py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
                             {submitting && <Icon name="Spinner" size={18} />}
-                            {submitting ? 'Procesando...' : 'Procesar CSV'}
+                            Revisar y procesar
                         </button>
                     </div>
+                    <BulkConfirmModal
+                        open={confirmOpen}
+                        parsed={parsed}
+                        companies={companies}
+                        defaultCompanyId={defaultCompanyId}
+                        isSuper={isSuper}
+                        submitting={submitting}
+                        onConfirm={submit}
+                        onCancel={() => { if (!submitting) { setConfirmOpen(false); } }}
+                    />
                 </div>
             );
         };
@@ -2239,7 +3467,7 @@
         );
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<ToastProvider><App /></ToastProvider>);
+        root.render(<ToastProvider><BrandingProvider><App /></BrandingProvider></ToastProvider>);
     </script>
 </body>
 </html>

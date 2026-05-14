@@ -15,10 +15,50 @@ CREATE TABLE IF NOT EXISTS brands (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS tenant_settings (
+    id INTEGER PRIMARY KEY,
+    product_name TEXT NOT NULL DEFAULT 'Melius Clockin',
+    logo_url TEXT NULL,
+    primary_color TEXT NOT NULL DEFAULT '#07d6da',
+    secondary_color TEXT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS subscription_plans (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    price_monthly_cents INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    max_users INTEGER NULL,
+    max_companies INTEGER NULL,
+    features TEXT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY,
+    plan_code TEXT NOT NULL DEFAULT 'free',
+    provider TEXT NOT NULL DEFAULT 'none',
+    provider_customer_id TEXT NULL,
+    provider_subscription_id TEXT NULL,
+    status TEXT NOT NULL DEFAULT 'trial',
+    current_period_start TEXT NULL,
+    current_period_end TEXT NULL,
+    cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+    metadata TEXT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (plan_code) REFERENCES subscription_plans(code)
+);
+
 CREATE TABLE IF NOT EXISTS companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     brand_id INTEGER NULL,
+    branding_logo_url TEXT NULL,
+    branding_primary TEXT NULL,
+    branding_secondary TEXT NULL,
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     work_start_time TEXT NOT NULL DEFAULT '09:00',
     work_end_time TEXT NOT NULL DEFAULT '18:00',

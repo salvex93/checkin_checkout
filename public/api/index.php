@@ -21,6 +21,8 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/records.php';
 require_once __DIR__ . '/admin.php';
 require_once __DIR__ . '/dashboard.php';
+require_once __DIR__ . '/tenant.php';
+require_once __DIR__ . '/billing.php';
 
 // Headers de seguridad antes que nada
 emit_security_headers();
@@ -52,10 +54,15 @@ $body = in_array($method, ['POST', 'PUT', 'DELETE'], true) ? read_json_body() : 
 
 // Parser de paths con id: admin/companies/123 -> ('admin/companies', 123)
 // admin/brands/123/logo -> ('admin/brands', 123, 'logo')
+// admin/companies/123/branding -> ('admin/companies', 123, 'branding')
 $endpointBase = $endpoint;
 $endpointId = null;
 $endpointAction = null;
 if (preg_match('#^(admin/brands)/(\d+)/(logo)$#', $endpoint, $m)) {
+    $endpointBase = $m[1];
+    $endpointId = (int)$m[2];
+    $endpointAction = $m[3];
+} elseif (preg_match('#^(admin/companies)/(\d+)/(branding)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
@@ -66,11 +73,16 @@ if (preg_match('#^(admin/brands)/(\d+)/(logo)$#', $endpoint, $m)) {
 
 // === Dispatcher ===
 try {
-    // Rutas con id + accion (subrecurso)
+    // Rutas con id + accion (subrecurso). Cada case usa "return" para evitar
+    // fallthrough silencioso si algun handler futuro no llama exit.
     if ($endpointId !== null && $endpointAction !== null) {
         switch ("{$method} {$endpointBase}/{$endpointAction}") {
             case 'POST admin/brands/logo':
                 admin_brands_upload_logo($endpointId);
+                return;
+            case 'PUT admin/companies/branding':
+                admin_company_branding_update($endpointId, $body);
+                return;
             default:
                 err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
         }
@@ -80,18 +92,25 @@ try {
         switch ("{$method} {$endpointBase}") {
             case 'PUT admin/companies':
                 admin_companies_update($endpointId, $body);
+                return;
             case 'DELETE admin/companies':
                 admin_companies_delete($endpointId);
+                return;
             case 'PUT admin/users':
                 admin_users_update($endpointId, $body);
+                return;
             case 'DELETE admin/users':
                 admin_users_delete($endpointId, $body);
+                return;
             case 'PUT admin/brands':
                 admin_brands_update($endpointId, $body);
+                return;
             case 'DELETE admin/brands':
                 admin_brands_delete($endpointId);
+                return;
             case 'GET admin/dashboard/company':
                 admin_dashboard_company($endpointId);
+                return;
             default:
                 err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
         }
@@ -101,6 +120,10 @@ try {
         // --- CSRF token ---
         case 'GET csrf':
             ok(['csrf_token' => csrf_token()]);
+
+        // --- Branding (publico, pre-login) ---
+        case 'GET branding':
+            tenant_public_branding();
 
         // --- Auth ---
         // auth/register deprecado: alta de usuarios ahora va por admin/users/invite (#26).
@@ -148,6 +171,24 @@ try {
             admin_overtime_requests();
         case 'POST admin/decide':
             admin_decide($body);
+
+        // --- Admin: tenant settings (white-label) ---
+        case 'GET admin/tenant-settings':
+            admin_tenant_get();
+        case 'PUT admin/tenant-settings':
+            admin_tenant_update($body);
+        case 'POST admin/tenant-settings/logo':
+            admin_tenant_upload_logo();
+
+        // --- Admin: billing / licenciamiento ---
+        case 'GET admin/billing/plans':
+            admin_billing_plans();
+        case 'GET admin/billing/subscription':
+            admin_billing_subscription();
+        case 'PUT admin/billing/subscription':
+            admin_billing_subscription_update($body);
+        case 'POST admin/billing/connect':
+            admin_billing_connect($body);
 
         // --- Admin: empresas y agentes (Fase 2) ---
         case 'GET admin/companies':

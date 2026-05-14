@@ -58,7 +58,9 @@ function dashboard_compute(?int $companyFilter, bool $forceCompany): array {
         $params[] = $companyFilter;
     }
 
-    $hideSuper = " AND u.role <> 'super_admin'";
+    // Todos los usuarios activos cuentan, sin importar rol. Super_admin y admin
+    // tambien deben reflejarse en KPIs y desgloses si estan asignados a una empresa.
+    $hideSuper = '';
 
     $today_count = db_one(
         "SELECT COUNT(*) c FROM attendance_records ar
@@ -130,7 +132,7 @@ function dashboard_compute(?int $companyFilter, bool $forceCompany): array {
     if (!$forceCompany && $companyFilter === null) {
         $rows = db_all(
             "SELECT c.id, c.name,
-                    SUM(CASE WHEN u.is_active = 1 AND u.status = 'active' AND u.role <> 'super_admin' THEN 1 ELSE 0 END) AS active_users
+                    SUM(CASE WHEN u.is_active = 1 AND u.status = 'active' THEN 1 ELSE 0 END) AS active_users
                FROM companies c
                LEFT JOIN users u ON u.company_id = c.id
               GROUP BY c.id, c.name

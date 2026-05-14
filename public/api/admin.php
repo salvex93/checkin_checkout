@@ -181,7 +181,10 @@ function admin_companies_list(): never {
     $rows = db_all(
         'SELECT c.id, c.name, c.brand_id, c.timezone, c.work_start_time, c.work_end_time,
                 c.work_days_mask, c.grace_minutes_late, c.is_configured, c.created_at,
+                c.branding_logo_url, c.branding_primary, c.branding_secondary,
                 b.slug AS brand_slug, b.name AS brand_name, b.logo_url AS brand_logo_url,
+                b.primary_color AS brand_primary, b.secondary_color AS brand_secondary,
+                b.welcome_intro AS brand_welcome,
                 (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id AND u.is_active = 1) AS active_users
            FROM companies c
            LEFT JOIN brands b ON b.id = c.brand_id
@@ -194,6 +197,12 @@ function admin_companies_list(): never {
         'brand_slug' => $r['brand_slug'] ?? null,
         'brand_name' => $r['brand_name'] ?? null,
         'brand_logo_url' => $r['brand_logo_url'] ?? null,
+        'brand_primary' => $r['brand_primary'] ?? null,
+        'brand_secondary' => $r['brand_secondary'] ?? null,
+        'brand_welcome' => $r['brand_welcome'] ?? null,
+        'branding_logo_url' => $r['branding_logo_url'] ?? null,
+        'branding_primary' => $r['branding_primary'] ?? null,
+        'branding_secondary' => $r['branding_secondary'] ?? null,
         'timezone' => $r['timezone'],
         'work_start_time' => substr($r['work_start_time'], 0, 5),
         'work_end_time' => substr($r['work_end_time'], 0, 5),
@@ -534,7 +543,7 @@ function admin_users_list(): never {
 function admin_users_update(int $id, array $body): never {
     require_csrf();
     $admin = require_admin();
-    $user = db_one('SELECT id, role FROM users WHERE id = ?', [$id]);
+    $user = db_one('SELECT id, role, company_id FROM users WHERE id = ?', [$id]);
     if (!$user) err('NOT_FOUND', 'Agente no encontrado.', 404);
 
     // Blindaje super_admin: solo otro super_admin puede tocarlo. Para admins
@@ -544,11 +553,22 @@ function admin_users_update(int $id, array $body): never {
         err('NOT_FOUND', 'Agente no encontrado.', 404);
     }
 
+    // Scope por empresa: admin normal solo puede modificar usuarios DE SU EMPRESA.
+    // Si no, NOT_FOUND (no filtramos que el usuario existe en otra empresa).
+    $isSuper = ($admin['role'] ?? '') === 'super_admin';
+    if (!$isSuper && (int)($user['company_id'] ?? 0) !== (int)($admin['company_id'] ?? -1)) {
+        err('NOT_FOUND', 'Agente no encontrado.', 404);
+    }
+
     $companyId = null;
     if (array_key_exists('company_id', $body) && $body['company_id'] !== null && $body['company_id'] !== '') {
         $companyId = validate_int($body, 'company_id', 1);
         if (!db_one('SELECT id FROM companies WHERE id = ?', [$companyId])) {
             err('INVALID_INPUT', 'Empresa no existe.', 400, ['field' => 'company_id']);
+        }
+        // Admin normal no puede mover usuarios a otra empresa.
+        if (!$isSuper && $companyId !== (int)$admin['company_id']) {
+            err('FORBIDDEN', 'No puedes asignar agentes a otra empresa.', 403, ['field' => 'company_id']);
         }
     }
 
@@ -693,8 +713,14 @@ function admin_users_invite(array $body): never {
     }
 
     // Anti-enumeracion: si el email ya existe no creamos pero respondemos OK.
+    // Para evitar timing-leak, simulamos el costo del flujo real (bcrypt + sleep
+    // aleatorio comparable al envio SMTP) antes de responder.
     $existing = db_one('SELECT id FROM users WHERE email = ?', [$email]);
     if ($existing) {
+        // bcrypt dummy: mismo costo que el flujo de alta real (cost 12).
+        password_hash('dummy-' . random_bytes(8), PASSWORD_BCRYPT, ['cost' => 12]);
+        // Sleep aleatorio 200-600ms para acercarnos al tiempo de envio SMTP.
+        usleep(random_int(200_000, 600_000));
         audit_log((int)$admin['id'], 'admin_invite_duplicate', ['email' => $email]);
         ok(['message' => 'Invitacion enviada.']);
     }
@@ -759,6 +785,10 @@ function admin_users_bulk_invite(array $body): never {
     require_csrf();
     $admin = require_admin();
     $isSuper = ($admin['role'] ?? '') === 'super_admin';
+
+    // Rate limit: 5 bulk-invites por hora por admin para evitar denial-of-wallet
+    // via amplificacion SMTP (cada bulk puede mandar hasta 500 mails).
+    rate_limit_or_block('bulk_invite', (string)$admin['id'], 5, 3600);
 
     $csv = $body['csv'] ?? '';
     if (!is_string($csv) || trim($csv) === '') {

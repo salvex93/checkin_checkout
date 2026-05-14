@@ -127,7 +127,7 @@ function records_mine(): never {
 
 function records_clockin(array $body): never {
     require_csrf();
-    $u = require_login();
+    $u = require_no_pending_password();
     require_company_for_clock($u);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
@@ -206,7 +206,7 @@ function records_clockin(array $body): never {
 
 function records_clockout(array $body = []): never {
     require_csrf();
-    $u = require_login();
+    $u = require_no_pending_password();
     require_company_for_clock($u);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
@@ -238,7 +238,7 @@ function records_clockout(array $body = []): never {
 
 function records_overtime(array $body): never {
     require_csrf();
-    $u = require_login();
+    $u = require_no_pending_password();
     $hours = validate_float($body, 'hours', 0.5, OVERTIME_MAX_HOURS);
     $reason = validate_string($body, 'reason', 0, 240, false) ?? '';
 
@@ -296,13 +296,26 @@ function records_overtime(array $body): never {
 
 function records_change_company(array $body): never {
     require_csrf();
-    $u = require_login();
+    $u = require_no_pending_password();
     $newCompanyId = validate_int($body, 'new_company_id', 1);
 
-    $company = db_one('SELECT id, name FROM companies WHERE id = ?', [$newCompanyId]);
+    $company = db_one('SELECT id, name, brand_id FROM companies WHERE id = ?', [$newCompanyId]);
     if (!$company) err('INVALID_INPUT', 'Empresa no existe.', 400, ['field' => 'new_company_id']);
     if ((int)$u['company_id'] === $newCompanyId) {
         err('INVALID_INPUT', 'Ya perteneces a esa empresa.', 400, ['field' => 'new_company_id']);
+    }
+
+    // IDOR fix: el consultor solo puede solicitar cambio a empresas DE LA MISMA
+    // marca paraguas que su empresa actual. Si su empresa no tiene marca, solo
+    // puede pedir a empresas sin marca tambien. Esto refleja el modelo real:
+    // un consultor de Melius no salta a Fullman sin proceso administrativo.
+    $currentCompany = $u['company_id'] !== null
+        ? db_one('SELECT brand_id FROM companies WHERE id = ?', [$u['company_id']])
+        : null;
+    $currentBrand = $currentCompany['brand_id'] ?? null;
+    $targetBrand = $company['brand_id'] ?? null;
+    if ($currentBrand !== $targetBrand) {
+        err('FORBIDDEN', 'Solo puedes solicitar cambio entre empresas de la misma marca. Contacta a un administrador para cambios entre marcas.', 403, ['field' => 'new_company_id']);
     }
 
     db_exec(
@@ -321,7 +334,7 @@ function records_change_company(array $body): never {
  */
 function records_overtime_edit_request(array $body): never {
     require_csrf();
-    $u = require_login();
+    $u = require_no_pending_password();
 
     $refId = validate_int($body, 'overtime_request_id', 1);
     $newHours = validate_float($body, 'new_hours', 0.5, OVERTIME_MAX_HOURS);

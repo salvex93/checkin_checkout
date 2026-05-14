@@ -30,11 +30,19 @@ function emit_security_headers(): void {
     // unsafe-inline en script-src es necesario por Babel-standalone (compila
     // <script type=text/babel> en el cliente). Se elimina cuando precompilemos
     // el JSX a JS plano (Tarea #7 del BACKLOG).
+    // CSP endurecido: unpkg.com solo para paths conocidos (React/ReactDOM/Babel),
+    // no para cualquier paquete npm. cdnjs solo para ColorThief.
     $csp = "default-src 'self'; "
-         . "script-src 'self' https://unpkg.com https://cdn.tailwindcss.com 'unsafe-inline'; "
+         . "script-src 'self' "
+            . "https://unpkg.com/react@18/ "
+            . "https://unpkg.com/react-dom@18/ "
+            . "https://unpkg.com/@babel/standalone/ "
+            . "https://cdn.tailwindcss.com "
+            . "https://cdnjs.cloudflare.com/ajax/libs/color-thief/ "
+            . "'unsafe-inline'; "
          . "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; "
          . "font-src 'self' https://fonts.gstatic.com; "
-         . "img-src 'self' data:; "
+         . "img-src 'self' data: blob: https:; "
          . "connect-src 'self'; "
          . "frame-ancestors 'none'; "
          . "base-uri 'self'; "
