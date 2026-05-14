@@ -43,10 +43,21 @@
         crossorigin="anonymous"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Poppins:wght@600;700;800;900&display=swap');
+        :root {
+            --melius-cyan: #07d6da;
+            --melius-violet: #9909fe;
+            --melius-violet-dark: #7a07cc;
+            --melius-cyan-dark: #059aa0;
+        }
         html, body { background-color: #f8fafc; }
         html.dark, html.dark body { background-color: #0b1220; }
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        h1, h2, h3, .font-display { font-family: 'Poppins', 'Inter', sans-serif; }
+        .btn-melius { background-image: linear-gradient(135deg, var(--melius-cyan) 0%, var(--melius-violet) 100%); color: #fff; }
+        .btn-melius:hover { background-image: linear-gradient(135deg, var(--melius-cyan-dark) 0%, var(--melius-violet-dark) 100%); }
+        .text-melius-cyan { color: var(--melius-cyan); }
+        .ring-melius { box-shadow: 0 10px 30px -10px rgba(7,214,218,0.45), 0 8px 24px -8px rgba(153,9,254,0.35); }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -219,11 +230,11 @@
             }, [open, onClose, dismissible]);
             if (!open) return null;
             return (
-                <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6"
+                <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6"
                     onMouseDown={(e) => { if (dismissible && e.target === e.currentTarget) onClose(); }}
                     role="presentation">
                     <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
-                        className={`bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[90vh] overflow-y-auto custom-scrollbar rounded-3xl sm:rounded-[2.5rem] p-6 sm:p-10 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}>
+                        className={`bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[92vh] overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-10 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}>
                         {children}
                     </div>
                 </div>
@@ -443,10 +454,10 @@
         const LoginCard = ({ onSubmit, submitting, onGoForgot, theme, onToggleTheme }) => (
             <div className="max-w-md w-full bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-12 rounded-[2rem] sm:rounded-[3rem] md:rounded-[4rem] shadow-2xl dark:shadow-black/50 border border-slate-100 dark:border-slate-800 flex flex-col items-center anim-zoom-in relative">
                 <div className="absolute top-4 right-4 sm:top-6 sm:right-6"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
-                <div className="bg-blue-600 w-16 h-16 sm:w-24 sm:h-24 rounded-2xl sm:rounded-[2rem] flex items-center justify-center mb-6 sm:mb-8 shadow-2xl shadow-blue-200 dark:shadow-blue-900/40">
-                    <Icon name="Clock" className="text-white w-8 h-8 sm:w-12 sm:h-12" />
+                <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-2xl sm:rounded-[2rem] flex items-center justify-center mb-6 sm:mb-8 ring-melius bg-white dark:bg-slate-800 p-2">
+                    <img src="/assets/brands/melius.webp" alt="Melius Services" className="w-full h-full object-contain" />
                 </div>
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tighter text-center">Clock System</h1>
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tighter text-center font-display">Clock System</h1>
                 <p className="text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-[9px] sm:text-[10px] mb-8 sm:mb-12 text-center">Melius Services Portal</p>
 
                 <form onSubmit={onSubmit} className="w-full space-y-4 sm:space-y-5">
@@ -461,7 +472,7 @@
                             className="w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
                     </div>
                     <button type="submit" disabled={submitting}
-                        className="w-full bg-blue-600 text-white py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black text-lg sm:text-xl hover:bg-blue-700 shadow-xl shadow-blue-200 dark:shadow-blue-900/40 transition-all active:scale-95 no-select disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-3">
+                        className="w-full btn-melius py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black text-lg sm:text-xl ring-melius transition-all active:scale-95 no-select disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-3">
                         {submitting && <Icon name="Spinner" size={20} />}
                         {submitting ? 'Validando' : 'Entrar'}
                     </button>
@@ -722,21 +733,29 @@
                 } finally { setSubmitting(false); }
             };
 
-            const userCompany = useMemo(() =>
-                companies.find(c => c.id === currentUser.company_id), [companies, currentUser]);
+            const userCompany = useMemo(() => {
+                if (currentUser.company_name) return { id: currentUser.company_id, name: currentUser.company_name };
+                return companies.find(c => c.id === currentUser.company_id);
+            }, [companies, currentUser]);
 
             return (
                 <div className="max-w-4xl w-full flex flex-col gap-6 sm:gap-8 anim-fade-in">
                     {/* Header */}
                     <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl dark:shadow-black/40 border border-slate-100 dark:border-slate-800 gap-4 md:gap-6">
                         <div className="flex items-center gap-4 sm:gap-5 w-full md:w-auto">
-                            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl sm:text-3xl font-black shadow-lg shadow-blue-200 dark:shadow-blue-900/40 shrink-0">
-                                {currentUser.name[0]?.toUpperCase()}
-                            </div>
+                            {currentUser.brand_logo_url ? (
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white dark:bg-slate-800 ring-melius flex items-center justify-center p-2 shrink-0" title={currentUser.brand_name || ''}>
+                                    <img src={currentUser.brand_logo_url} alt={currentUser.brand_name || 'Marca'} className="w-full h-full object-contain" />
+                                </div>
+                            ) : (
+                                <div className="w-14 h-14 sm:w-16 sm:h-16 btn-melius rounded-2xl flex items-center justify-center text-white text-2xl sm:text-3xl font-black ring-melius shrink-0 font-display">
+                                    {currentUser.name[0]?.toUpperCase()}
+                                </div>
+                            )}
                             <div className="min-w-0">
                                 <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight truncate">{currentUser.name}</h2>
                                 <div className="flex items-center gap-2 sm:gap-3 mt-1 flex-wrap">
-                                    <span className="text-[11px] sm:text-xs font-bold px-2.5 sm:px-3 py-1 bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 rounded-full">
+                                    <span className="text-[11px] sm:text-xs font-bold px-2.5 sm:px-3 py-1 bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan rounded-full border border-cyan-100 dark:border-cyan-900/40">
                                         {userCompany?.name || 'Sin empresa'}
                                     </span>
                                     <button onClick={() => { if (!companies.length) loadCompanies(); setShowChangeModal(true); }}
@@ -751,7 +770,7 @@
                             {canSwitchToAdmin && onGoAdmin && (
                                 <button onClick={onGoAdmin}
                                     title="Cambiar a vista de administracion"
-                                    className="px-4 sm:px-5 py-2.5 sm:py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all">
+                                    className="px-4 sm:px-5 py-2.5 sm:py-3 btn-melius rounded-2xl font-bold text-sm transition-all">
                                     Admin Console &rarr;
                                 </button>
                             )}
@@ -1005,11 +1024,12 @@
             const tabs = [
                 { id: 'dashboard', label: 'Dashboard' },
                 { id: 'records', label: 'Registros' },
+                ...(isSuper ? [{ id: 'brands', label: 'Marcas' }] : []),
                 { id: 'companies', label: 'Empresas' },
                 { id: 'agents', label: 'Agentes' },
                 { id: 'changes', label: 'Cambios' },
                 { id: 'overtime', label: 'Extras' },
-                ...(isSuper ? [{ id: 'admins', label: 'Admins' }] : []),
+                { id: 'admins', label: 'Admins' },
             ];
             const [activeTab, setActiveTab] = useState('dashboard');
             const [counts, setCounts] = useState({ changes: 0, overtime: 0 });
@@ -1029,16 +1049,18 @@
                 <div className="max-w-6xl w-full flex flex-col gap-4 sm:gap-6">
                     <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 gap-4">
                         <div className="flex items-center gap-3 sm:gap-4">
-                            <div className="bg-slate-900 dark:bg-blue-600 p-3 rounded-2xl text-white"><Icon name="ShieldCheck" /></div>
+                            <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 ring-melius flex items-center justify-center p-1.5 shrink-0">
+                                <img src={currentUser.brand_logo_url || '/assets/brands/melius.webp'} alt={currentUser.brand_name || 'Melius Services'} className="w-full h-full object-contain" />
+                            </div>
                             <div>
-                                <h2 className="font-black text-lg sm:text-xl text-slate-800 dark:text-slate-100">Melius Admin Console</h2>
-                                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest">{isSuper ? 'Super administrador' : 'Administrador'} · {currentUser.name}</p>
+                                <h2 className="font-black text-lg sm:text-xl text-slate-800 dark:text-slate-100 font-display">{currentUser.brand_name || 'Melius'} Admin Console</h2>
+                                <p className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-widest">{isSuper ? 'Super administrador' : 'Administrador'} &middot; {currentUser.name}</p>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 items-center justify-end">
+                        <div className="flex gap-2 items-center justify-start md:justify-end overflow-x-auto custom-scrollbar -mx-2 px-2 md:overflow-visible md:flex-wrap">
                             {tabs.map(t => (
                                 <button key={t.id} onClick={() => setActiveTab(t.id)}
-                                    className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all ${activeTab === t.id ? 'bg-slate-900 dark:bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}>
+                                    className={`shrink-0 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all ${activeTab === t.id ? 'btn-melius shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}>
                                     {t.label}
                                     {t.id === 'changes' && counts.changes > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
                                     {t.id === 'overtime' && counts.overtime > 0 && <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />}
@@ -1048,7 +1070,7 @@
                             {onGoDashboard && (
                                 <button onClick={onGoDashboard}
                                     title="Volver a la vista de empleado para marcar jornada"
-                                    className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all">
+                                    className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 transition-all">
                                     &larr; Mi jornada
                                 </button>
                             )}
@@ -1058,11 +1080,12 @@
 
                     {activeTab === 'dashboard' && <DashboardTab />}
                     {activeTab === 'records' && <RecordsTab isSuper={isSuper} />}
+                    {activeTab === 'brands' && isSuper && <BrandsTab />}
                     {activeTab === 'companies' && <CompaniesTab isSuper={isSuper} />}
                     {activeTab === 'agents' && <AgentsTab isSuper={isSuper} />}
                     {activeTab === 'changes' && <ChangesTab onChange={refreshCounts} />}
                     {activeTab === 'overtime' && <OvertimeTab onChange={refreshCounts} />}
-                    {activeTab === 'admins' && isSuper && <AdminsTab />}
+                    {activeTab === 'admins' && <AdminsTab currentUser={currentUser} isSuper={isSuper} />}
                 </div>
             );
         };
@@ -1224,13 +1247,16 @@
         const CompanyForm = ({ initial, onSave, onCancel }) => {
             const [form, setForm] = useState(() => ({
                 name: initial?.name || '',
+                brand_id: initial?.brand_id || '',
                 timezone: initial?.timezone || 'America/Mexico_City',
                 work_start_time: initial?.work_start_time || '09:00',
                 work_end_time: initial?.work_end_time || '18:00',
                 work_days_mask: initial?.work_days_mask || 31,
                 grace_minutes_late: initial?.grace_minutes_late ?? 15,
             }));
+            const [brands, setBrands] = useState([]);
             const [submitting, setSubmitting] = useState(false);
+            useEffect(() => { apiFetch('admin/brands').then(d => setBrands(d.brands || [])).catch(() => {}); }, []);
             const dayBits = [
                 { bit: 1, label: 'L' }, { bit: 2, label: 'M' }, { bit: 4, label: 'X' },
                 { bit: 8, label: 'J' }, { bit: 16, label: 'V' }, { bit: 32, label: 'S' }, { bit: 64, label: 'D' },
@@ -1239,8 +1265,15 @@
             const submit = async (e) => {
                 e.preventDefault();
                 setSubmitting(true);
-                try { await onSave({ ...form, work_days_mask: parseInt(form.work_days_mask, 10), grace_minutes_late: parseInt(form.grace_minutes_late, 10) }); }
-                finally { setSubmitting(false); }
+                try {
+                    const payload = {
+                        ...form,
+                        work_days_mask: parseInt(form.work_days_mask, 10),
+                        grace_minutes_late: parseInt(form.grace_minutes_late, 10),
+                        brand_id: form.brand_id ? parseInt(form.brand_id, 10) : null,
+                    };
+                    await onSave(payload);
+                } finally { setSubmitting(false); }
             };
             return (
                 <form onSubmit={submit} className="space-y-4">
@@ -1249,6 +1282,14 @@
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre</span>
                             <input required maxLength="100" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                                 className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Marca paraguas</span>
+                            <select value={form.brand_id} onChange={(e) => setForm({ ...form, brand_id: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
+                                <option value="">— Sin marca —</option>
+                                {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
                         </label>
                         <label className="block">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Zona horaria (IANA)</span>
@@ -1285,6 +1326,222 @@
                     <div className="flex gap-2 pt-2">
                         <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cancelar</button>
                         <button type="submit" disabled={submitting} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Guardar
+                        </button>
+                    </div>
+                </form>
+            );
+        };
+
+        // Helper para multipart/form-data. apiFetch solo maneja JSON.
+        // Reusa la cookie de sesion y el CSRF_TOKEN del front.
+        async function apiUpload(path, formData) {
+            const headers = { 'Accept': 'application/json' };
+            if (CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
+            const res = await fetch(`${API_BASE}/${path.replace(/^\//, '')}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers,
+                body: formData,
+            });
+            let payload;
+            try { payload = await res.json(); }
+            catch (_) { payload = { ok: false, error: { code: 'BAD_RESPONSE', message: 'Respuesta no JSON.' } }; }
+            if (!res.ok || !payload.ok) {
+                throw payload.error || { code: 'UNKNOWN', message: `HTTP ${res.status}` };
+            }
+            return payload.data;
+        }
+
+        const BrandsTab = () => {
+            const { push: toast } = useToast();
+            const [rows, setRows] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [editing, setEditing] = useState(null);
+            const [creating, setCreating] = useState(false);
+
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try { const d = await apiFetch('admin/brands'); setRows(d.brands || []); }
+                catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, []);
+            useEffect(() => { load(); }, [load]);
+
+            const save = async (body, brandId, logoFile) => {
+                try {
+                    let id = brandId;
+                    if (brandId) {
+                        await apiFetch(`admin/brands/${brandId}`, { method: 'PUT', body });
+                    } else {
+                        const r = await apiFetch('admin/brands', { method: 'POST', body });
+                        id = r.id;
+                    }
+                    if (logoFile && id) {
+                        const fd = new FormData();
+                        fd.append('logo', logoFile);
+                        await apiUpload(`admin/brands/${id}/logo`, fd);
+                    }
+                    toast('success', brandId ? 'Marca actualizada.' : 'Marca creada.');
+                    setEditing(null); setCreating(false); load();
+                } catch (e) { toast('error', e.message || 'Error guardando marca.'); }
+            };
+
+            const remove = async (b) => {
+                if (!confirm(`Desactivar la marca "${b.name}"? Las empresas vinculadas quedaran sin marca.`)) return;
+                try { await apiFetch(`admin/brands/${b.id}`, { method: 'DELETE' }); toast('success', 'Marca desactivada.'); load(); }
+                catch (e) { toast('error', e.message); }
+            };
+
+            if (loading) return <LoadingScreen />;
+            if (error) return <ErrorState message={error} onRetry={load} />;
+
+            return (
+                <div className="space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <h3 className="font-black text-lg text-slate-800 dark:text-slate-100">Marcas paraguas</h3>
+                            <p className="text-xs text-slate-500">Logo, colores y mensaje de bienvenida que cada consultor vera al recibir su correo.</p>
+                        </div>
+                        <button onClick={() => setCreating(true)} className="px-4 py-2 rounded-xl btn-melius font-bold text-sm">+ Nueva marca</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {rows.map(b => (
+                            <div key={b.id} className={`bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm ${!b.is_active ? 'opacity-60' : ''}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-start gap-3 min-w-0">
+                                        <div className="w-14 h-14 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center p-1.5 shrink-0">
+                                            <img src={b.logo_url} alt={b.name} className="w-full h-full object-contain" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h4 className="font-black text-slate-800 dark:text-slate-100 truncate">{b.name}</h4>
+                                            <p className="text-[10px] font-mono text-slate-400 truncate">slug: {b.slug}</p>
+                                            <div className="flex items-center gap-1.5 mt-1.5">
+                                                <span title={b.primary_color} className="w-5 h-5 rounded-full border border-white shadow-sm" style={{ backgroundColor: b.primary_color }}></span>
+                                                {b.secondary_color && <span title={b.secondary_color} className="w-5 h-5 rounded-full border border-white shadow-sm" style={{ backgroundColor: b.secondary_color }}></span>}
+                                                <span className="text-[10px] font-mono text-slate-500 ml-1">{b.primary_color}{b.secondary_color ? ' / ' + b.secondary_color : ''}</span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 mt-1">{b.companies_count} empresa{b.companies_count === 1 ? '' : 's'} vinculadas</p>
+                                            {!b.is_active && <span className="inline-block mt-1 text-[10px] font-black uppercase tracking-widest text-red-500">Inactiva</span>}
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2 shrink-0">
+                                        <button onClick={() => setEditing(b)} className="text-xs font-bold text-blue-600 hover:underline">Editar</button>
+                                        {b.is_active && <button onClick={() => remove(b)} className="text-xs font-bold text-red-500 hover:underline">Desactivar</button>}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {rows.length === 0 && <EmptyState message="Sin marcas aun" />}
+                    </div>
+                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva marca" maxWidth="max-w-2xl">
+                        <BrandForm onSave={(b, file) => save(b, null, file)} onCancel={() => setCreating(false)} />
+                    </Modal>
+                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar marca" maxWidth="max-w-2xl">
+                        {editing && <BrandForm initial={editing} onSave={(b, file) => save(b, editing.id, file)} onCancel={() => setEditing(null)} />}
+                    </Modal>
+                </div>
+            );
+        };
+
+        const BrandForm = ({ initial, onSave, onCancel }) => {
+            const [form, setForm] = useState(() => ({
+                name: initial?.name || '',
+                primary_color: initial?.primary_color || '#07d6da',
+                secondary_color: initial?.secondary_color || '#9909fe',
+                welcome_intro: initial?.welcome_intro || '',
+            }));
+            const [logoFile, setLogoFile] = useState(null);
+            const [logoPreview, setLogoPreview] = useState(initial?.logo_url || '');
+            const [submitting, setSubmitting] = useState(false);
+            const fileRef = useRef(null);
+
+            const pickFile = (f) => {
+                if (!f) return;
+                if (f.size > 512 * 1024) { alert('El logo supera 512 KB.'); return; }
+                if (!['image/png','image/jpeg','image/webp','image/svg+xml'].includes(f.type)) {
+                    alert('Formato no soportado. Usa PNG, JPG, WebP o SVG.');
+                    return;
+                }
+                setLogoFile(f);
+                setLogoPreview(URL.createObjectURL(f));
+            };
+
+            const submit = async (e) => {
+                e.preventDefault();
+                setSubmitting(true);
+                try {
+                    const body = {
+                        name: form.name.trim(),
+                        primary_color: form.primary_color,
+                        secondary_color: form.secondary_color || null,
+                        welcome_intro: form.welcome_intro.trim() || null,
+                    };
+                    await onSave(body, logoFile);
+                } finally { setSubmitting(false); }
+            };
+
+            return (
+                <form onSubmit={submit} className="space-y-4">
+                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{initial ? 'Editar marca' : 'Nueva marca'}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <label className="block sm:col-span-3">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre de la marca</span>
+                            <input required maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold" />
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Color primario</span>
+                            <div className="mt-1 flex items-center gap-2">
+                                <input type="color" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
+                                    className="w-12 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                <input type="text" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
+                                    pattern="^#[0-9a-fA-F]{3,6}$" required
+                                    className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-sm" />
+                            </div>
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Color secundario (opcional)</span>
+                            <div className="mt-1 flex items-center gap-2">
+                                <input type="color" value={form.secondary_color || '#9909fe'} onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
+                                    className="w-12 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer" />
+                                <input type="text" value={form.secondary_color} onChange={(e) => setForm({ ...form, secondary_color: e.target.value })}
+                                    pattern="^#[0-9a-fA-F]{3,6}$|^$"
+                                    placeholder="vacio = sin gradiente"
+                                    className="flex-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-sm" />
+                            </div>
+                        </label>
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo</span>
+                            <div className="mt-1 flex items-center gap-3">
+                                {logoPreview && (
+                                    <div className="w-14 h-14 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center p-1.5 shrink-0">
+                                        <img src={logoPreview} alt="preview" className="w-full h-full object-contain" />
+                                    </div>
+                                )}
+                                <button type="button" onClick={() => fileRef.current?.click()}
+                                    className="px-3 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 font-bold text-xs">
+                                    {logoFile ? 'Cambiar' : (logoPreview ? 'Reemplazar' : 'Seleccionar')}
+                                </button>
+                                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
+                                    onChange={(e) => pickFile(e.target.files?.[0])} />
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1">PNG, JPG, WebP o SVG. Max 512 KB.</p>
+                        </label>
+                    </div>
+                    <label className="block">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mensaje de bienvenida (aparece en el correo de invitacion)</span>
+                        <textarea value={form.welcome_intro} rows="4" maxLength="2000"
+                            onChange={(e) => setForm({ ...form, welcome_intro: e.target.value })}
+                            placeholder="Si lo dejas vacio, usamos un saludo generico con el nombre de la empresa. Ejemplo: En Fullman creemos en disciplinar la jornada para que tu tiempo cuente. Bienvenido al equipo."
+                            className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm" />
+                        <p className="text-[10px] text-slate-400 mt-1">{form.welcome_intro.length}/2000 caracteres</p>
+                    </label>
+                    <div className="flex gap-2 pt-2">
+                        <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cancelar</button>
+                        <button type="submit" disabled={submitting} className="flex-1 py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
                             {submitting && <Icon name="Spinner" size={18} />}
                             Guardar
                         </button>
@@ -1337,11 +1594,19 @@
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {rows.map(c => (
                             <div key={c.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                                <div className="flex items-start justify-between gap-2">
-                                    <div>
-                                        <h4 className="font-black text-slate-800 dark:text-slate-100">{c.name}</h4>
-                                        <p className="text-[11px] text-slate-400 font-mono">{c.timezone} · {c.work_start_time}–{c.work_end_time} · gracia {c.grace_minutes_late}m</p>
-                                        <p className="text-[11px] text-slate-500 mt-1">Agentes activos: {c.active_users}</p>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-start gap-3 min-w-0">
+                                        {c.brand_logo_url && (
+                                            <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center p-1 shrink-0" title={c.brand_name}>
+                                                <img src={c.brand_logo_url} alt={c.brand_name} className="w-full h-full object-contain" />
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <h4 className="font-black text-slate-800 dark:text-slate-100 truncate">{c.name}</h4>
+                                            {c.brand_name && <p className="text-[10px] font-black uppercase tracking-widest text-melius-cyan">{c.brand_name}</p>}
+                                            <p className="text-[11px] text-slate-400 font-mono mt-1">{c.timezone} · {c.work_start_time}–{c.work_end_time} · gracia {c.grace_minutes_late}m</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">Agentes activos: {c.active_users}</p>
+                                        </div>
                                     </div>
                                     <div className="flex gap-2 shrink-0">
                                         <button onClick={() => setEditing(c)} className="text-xs font-bold text-blue-600 hover:underline">Editar</button>
@@ -1432,6 +1697,7 @@
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             const [inviting, setInviting] = useState(false);
+            const [bulkOpen, setBulkOpen] = useState(false);
             const load = useCallback(async () => {
                 setLoading(true); setError(null);
                 try {
@@ -1466,34 +1732,37 @@
 
             return (
                 <div className="space-y-4">
-                    <div className="flex flex-wrap items-end gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                         <input placeholder="Buscar por nombre o correo" value={q} onChange={(e) => setQ(e.target.value)}
-                            className="flex-1 min-w-[200px] px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-medium" />
+                            className="w-full sm:flex-1 sm:min-w-[200px] px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-medium" />
                         {isSuper && (
-                            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
                                 <option value="">Todas las empresas</option>
                                 {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
                         )}
-                        <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                        <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
                             <option value="">Cualquier estado</option>
                             <option value="active">Activos</option>
                             <option value="disabled">Deshabilitados</option>
                             <option value="pending_confirmation">Pendientes</option>
                         </select>
-                        <button onClick={() => setInviting(true)} className="ml-auto px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700">+ Invitar</button>
+                        <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
+                            <button onClick={() => setBulkOpen(true)} className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 font-bold text-sm hover:bg-cyan-100 dark:hover:bg-cyan-900/50">Carga CSV</button>
+                            <button onClick={() => setInviting(true)} className="flex-1 sm:flex-none px-4 py-2 rounded-xl btn-melius font-bold text-sm">+ Invitar</button>
+                        </div>
                     </div>
                     {loading ? <LoadingScreen /> : error ? <ErrorState message={error} onRetry={load} /> : (
                         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 divide-y dark:divide-slate-800">
                             {data.agents.map(a => (
-                                <div key={a.id} className="p-4 flex flex-wrap items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                    <div className="flex-1 min-w-[180px]">
-                                        <p className="font-bold text-slate-800 dark:text-slate-100">{a.name} <span className="text-[10px] font-black uppercase ml-2 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">{a.role}</span></p>
-                                        <p className="text-xs text-slate-500">{a.email}</p>
+                                <div key={a.id} className="p-4 flex flex-wrap items-center gap-2 sm:gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                    <div className="flex-1 min-w-0 basis-full sm:basis-auto sm:min-w-[180px]">
+                                        <p className="font-bold text-slate-800 dark:text-slate-100 truncate">{a.name} <span className="text-[10px] font-black uppercase ml-2 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">{a.role}</span></p>
+                                        <p className="text-xs text-slate-500 truncate">{a.email}</p>
                                     </div>
-                                    <span className="text-xs text-slate-500">{a.company_name || 'Sin empresa'}</span>
+                                    <span className="text-xs text-slate-500 truncate max-w-[120px]">{a.company_name || 'Sin empresa'}</span>
                                     <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
-                                    <button onClick={() => toggleStatus(a)} className="text-xs font-bold text-blue-600 hover:underline">{a.status === 'active' ? 'Desactivar' : 'Activar'}</button>
+                                    <button onClick={() => toggleStatus(a)} className="text-xs font-bold text-blue-600 hover:underline ml-auto">{a.status === 'active' ? 'Desactivar' : 'Activar'}</button>
                                 </div>
                             ))}
                             {data.agents.length === 0 && <EmptyState message="Sin resultados" />}
@@ -1503,16 +1772,182 @@
                         <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar agente</h3>
                         <InviteForm defaultRole="consultant" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
                     </Modal>
+                    <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title="Carga masiva CSV" maxWidth="max-w-3xl">
+                        <BulkInviteForm
+                            isSuper={isSuper}
+                            companies={companies}
+                            onClose={() => setBulkOpen(false)}
+                            onDone={() => { setBulkOpen(false); load(); }}
+                        />
+                    </Modal>
                 </div>
             );
         };
 
-        const AdminsTab = () => {
+        const BulkInviteForm = ({ isSuper, companies, onClose, onDone }) => {
             const { push: toast } = useToast();
-            const [data, setData] = useState({ agents: [], total: 0 });
+            const [csv, setCsv] = useState('');
+            const [defaultCompanyId, setDefaultCompanyId] = useState('');
+            const [submitting, setSubmitting] = useState(false);
+            const [report, setReport] = useState(null);
+            const [dragOver, setDragOver] = useState(false);
+            const fileInputRef = useRef(null);
+
+            const downloadTemplate = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/admin/users/template.csv`, { credentials: 'same-origin' });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'plantilla_consultores.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                } catch (e) { toast('error', 'No se pudo descargar la plantilla.'); }
+            };
+
+            const readFile = (file) => {
+                if (!file) return;
+                if (file.size > 2 * 1024 * 1024) { toast('error', 'CSV supera 2 MB.'); return; }
+                const reader = new FileReader();
+                reader.onload = () => setCsv(String(reader.result || ''));
+                reader.readAsText(file, 'utf-8');
+            };
+
+            const onDrop = (e) => {
+                e.preventDefault(); setDragOver(false);
+                const f = e.dataTransfer?.files?.[0];
+                if (f) readFile(f);
+            };
+
+            const submit = async () => {
+                if (!csv.trim()) { toast('error', 'Pega o carga un CSV primero.'); return; }
+                setSubmitting(true);
+                setReport(null);
+                try {
+                    const body = { csv };
+                    if (defaultCompanyId) body.default_company_id = parseInt(defaultCompanyId, 10);
+                    const r = await apiFetch('admin/users/bulk-invite', { method: 'POST', body });
+                    setReport(r);
+                    if ((r.summary?.created || 0) > 0) {
+                        toast('success', `${r.summary.created} consultores creados.`);
+                    } else {
+                        toast('error', 'Ningun consultor fue creado. Revisa el reporte.');
+                    }
+                } catch (e) { toast('error', e.message || 'Error en carga masiva.'); }
+                finally { setSubmitting(false); }
+            };
+
+            return (
+                <div className="space-y-4">
+                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">Carga masiva de consultores</h3>
+
+                    <div className="rounded-2xl bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-100 dark:border-cyan-900/40 p-4 text-sm text-slate-700 dark:text-slate-200 space-y-3">
+                        <div>
+                            <p className="font-black text-melius-cyan mb-1">Como funciona en 3 pasos</p>
+                            <ol className="list-decimal list-inside space-y-1 text-xs leading-relaxed">
+                                <li><strong>Descarga la plantilla.</strong> Trae las columnas correctas y dos filas de ejemplo (puedes borrarlas).</li>
+                                <li><strong>Llena una fila por consultor</strong> en Excel o Google Sheets. Guarda como CSV.</li>
+                                <li><strong>Sube o pega el archivo</strong> aqui y dale Procesar. Cada consultor recibira un correo con su contrasena temporal.</li>
+                            </ol>
+                        </div>
+                        <button onClick={downloadTemplate}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl btn-melius font-bold text-sm">
+                            Descargar plantilla
+                        </button>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-100 dark:border-slate-700 p-4 text-xs text-slate-600 dark:text-slate-300 space-y-1.5 bg-white dark:bg-slate-900">
+                        <p className="font-black text-slate-700 dark:text-slate-200 mb-1">Columnas del CSV</p>
+                        <p><code className="font-mono text-melius-cyan font-bold">email</code> — correo del consultor.</p>
+                        <p><code className="font-mono text-melius-cyan font-bold">name</code> — nombre completo (minimo 2 caracteres).</p>
+                        <p><code className="font-mono text-melius-cyan font-bold">role</code> — escribe <code className="font-mono">consultant</code>{isSuper ? <span> (o <code className="font-mono">admin</code> si quieres dar de alta administradores).</span> : <span>.</span>}</p>
+                        {isSuper && (
+                            <p><code className="font-mono text-melius-cyan font-bold">company</code> — nombre de la empresa exactamente como aparece en el sistema (ej. <code className="font-mono">Coppel</code>, <code className="font-mono">Hyatt</code>). Puede ir vacio si seleccionas una empresa default abajo.</p>
+                        )}
+                        {!isSuper && (
+                            <p className="text-slate-500">Todos los consultores quedaran asignados a tu empresa automaticamente — no necesitas la columna <code className="font-mono">company</code>.</p>
+                        )}
+                        <p className="text-slate-500 pt-1">Maximo 500 filas por carga. El archivo se valida fila por fila; si alguna falla, las demas se procesan igual.</p>
+                    </div>
+
+                    {isSuper && (
+                        <label className="block">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Empresa default (se aplica a filas con la columna company vacia)</span>
+                            <select value={defaultCompanyId} onChange={(e) => setDefaultCompanyId(e.target.value)}
+                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
+                                <option value="">— Sin default (cada fila debe traer company) —</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </label>
+                    )}
+
+                    <div
+                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={onDrop}
+                        className={`rounded-2xl border-2 border-dashed p-6 text-center transition-all ${dragOver ? 'border-melius-cyan bg-cyan-50 dark:bg-cyan-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
+                        <p className="text-sm font-bold text-slate-600 dark:text-slate-300">Arrastra tu CSV aqui o</p>
+                        <button onClick={() => fileInputRef.current?.click()} className="mt-2 px-4 py-2 rounded-xl btn-melius font-bold text-sm">Selecciona archivo</button>
+                        <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden"
+                            onChange={(e) => readFile(e.target.files?.[0])} />
+                    </div>
+
+                    <label className="block">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">O pega el CSV directo</span>
+                        <textarea value={csv} onChange={(e) => setCsv(e.target.value)} rows="6" spellCheck="false"
+                            placeholder={isSuper
+                                ? "email,name,role,company\nana@empresa.com,Ana Gomez,consultant,Coppel"
+                                : "email,name,role\nana@empresa.com,Ana Gomez,consultant"}
+                            className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-xs" />
+                    </label>
+
+                    {report && (
+                        <div className="space-y-2 rounded-xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-900">
+                            <div className="flex gap-3 text-xs font-bold flex-wrap">
+                                <span className="px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Creados: {report.summary.created}</span>
+                                <span className="px-3 py-1 rounded-full bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300">Errores: {report.summary.failed}</span>
+                                <span className="px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">Omitidos: {report.summary.skipped}</span>
+                            </div>
+                            {(report.failed?.length > 0 || report.skipped?.length > 0) && (
+                                <div className="max-h-40 overflow-auto text-xs space-y-1 font-mono">
+                                    {report.failed?.map((f, i) => (
+                                        <div key={`f${i}`} className="text-red-600 dark:text-red-300">Fila {f.row}: {f.email || '(sin email)'} — {f.reason}</div>
+                                    ))}
+                                    {report.skipped?.map((s, i) => (
+                                        <div key={`s${i}`} className="text-amber-600 dark:text-amber-300">Fila {s.row}: {s.email} — {s.reason}</div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="flex gap-2 pt-2">
+                        <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">Cerrar</button>
+                        {report?.summary?.created > 0 && (
+                            <button onClick={onDone} className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-black hover:bg-emerald-700">Listo, recargar lista</button>
+                        )}
+                        <button onClick={submit} disabled={submitting || !csv.trim()} className="flex-1 py-3 rounded-xl btn-melius font-black disabled:opacity-60 flex items-center justify-center gap-2">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            {submitting ? 'Procesando...' : 'Procesar CSV'}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminsTab = ({ currentUser, isSuper }) => {
+            const { push: toast } = useToast();
+            const [data, setData] = useState({ agents: [] });
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             const [inviting, setInviting] = useState(false);
+            const [deleting, setDeleting] = useState(null);
+            const [confirmEmail, setConfirmEmail] = useState('');
+            const [busy, setBusy] = useState(false);
             const load = useCallback(async () => {
                 setLoading(true); setError(null);
                 try {
@@ -1527,6 +1962,28 @@
                 try { await apiFetch('admin/users/invite', { method: 'POST', body: { ...body, role: 'admin' } }); toast('success', 'Admin invitado.'); setInviting(false); load(); }
                 catch (e) { toast('error', e.message); }
             };
+
+            const openDelete = (admin) => { setDeleting(admin); setConfirmEmail(''); };
+            const closeDelete = () => { setDeleting(null); setConfirmEmail(''); setBusy(false); };
+            const canConfirmDelete = deleting && confirmEmail.trim().toLowerCase() === deleting.email.toLowerCase();
+
+            const doDelete = async () => {
+                if (!deleting || !canConfirmDelete) return;
+                setBusy(true);
+                try {
+                    await apiFetch(`admin/users/${deleting.id}`, {
+                        method: 'DELETE',
+                        body: { email_confirmation: confirmEmail.trim() }
+                    });
+                    toast('success', 'Administrador desactivado.');
+                    closeDelete();
+                    load();
+                } catch (e) {
+                    toast('error', e.message);
+                    setBusy(false);
+                }
+            };
+
             if (loading) return <LoadingScreen />;
             if (error) return <ErrorState message={error} onRetry={load} />;
             return (
@@ -1535,21 +1992,53 @@
                         <button onClick={() => setInviting(true)} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700">+ Invitar admin</button>
                     </div>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 divide-y dark:divide-slate-800">
-                        {data.agents.map(a => (
-                            <div key={a.id} className="p-4 flex flex-wrap items-center gap-3">
-                                <div className="flex-1 min-w-[180px]">
-                                    <p className="font-bold text-slate-800 dark:text-slate-100">{a.name} <span className="text-[10px] font-black uppercase ml-2 px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300">{a.role}</span></p>
-                                    <p className="text-xs text-slate-500">{a.email}</p>
+                        {data.agents.map(a => {
+                            const isSelf = a.id === currentUser.id;
+                            const isTargetSuper = a.role === 'super_admin';
+                            const canDelete = !isSelf && !isTargetSuper && a.status === 'active';
+                            return (
+                                <div key={a.id} className="p-4 flex flex-wrap items-center gap-2 sm:gap-3">
+                                    <div className="flex-1 min-w-0 basis-full sm:basis-auto sm:min-w-[180px]">
+                                        <p className="font-bold text-slate-800 dark:text-slate-100 truncate">{a.name} <span className="text-[10px] font-black uppercase ml-2 px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300">{a.role}</span>{isSelf && <span className="text-[10px] font-black uppercase ml-2 px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">tu</span>}</p>
+                                        <p className="text-xs text-slate-500 truncate">{a.email}</p>
+                                    </div>
+                                    <span className="text-xs text-slate-500 truncate max-w-[120px]">{a.company_name || 'Sin empresa'}</span>
+                                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
+                                    {canDelete && (
+                                        <button onClick={() => openDelete(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300">Eliminar</button>
+                                    )}
                                 </div>
-                                <span className="text-xs text-slate-500">{a.company_name || 'Sin empresa'}</span>
-                                <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
-                            </div>
-                        ))}
+                            );
+                        })}
                         {data.agents.length === 0 && <EmptyState message="Sin administradores aun" />}
                     </div>
                     <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar administrador" maxWidth="max-w-2xl">
                         <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar administrador</h3>
-                        <InviteForm defaultRole="admin" isSuper={true} onSave={invite} onCancel={() => setInviting(false)} />
+                        <InviteForm defaultRole="admin" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
+                    </Modal>
+                    <Modal open={!!deleting} onClose={closeDelete} title="Eliminar administrador" maxWidth="max-w-lg">
+                        <h3 className="text-xl font-black mb-2 text-slate-800 dark:text-slate-100">Eliminar administrador</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">Esta accion desactiva la cuenta del administrador. Se envia un aviso al afectado y un recibo a tu correo. La cuenta se puede reactivar despues cambiando su status a active.</p>
+                        {deleting && (
+                            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-4 text-sm">
+                                <p className="font-bold text-slate-800 dark:text-slate-100">{deleting.name}</p>
+                                <p className="text-xs text-slate-500">{deleting.email}</p>
+                                <p className="text-xs text-slate-500 mt-1">{deleting.company_name || 'Sin empresa'}</p>
+                            </div>
+                        )}
+                        <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Para confirmar, escribe el email del administrador</label>
+                        <input
+                            type="email"
+                            value={confirmEmail}
+                            onChange={e => setConfirmEmail(e.target.value)}
+                            placeholder={deleting?.email || ''}
+                            autoComplete="off"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono"
+                        />
+                        <div className="flex gap-2 mt-4 justify-end">
+                            <button onClick={closeDelete} disabled={busy} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-sm">Cancelar</button>
+                            <button onClick={doDelete} disabled={!canConfirmDelete || busy} className={`px-4 py-2 rounded-xl font-bold text-sm text-white ${canConfirmDelete && !busy ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed'}`}>{busy ? 'Eliminando...' : 'Eliminar'}</button>
+                        </div>
                     </Modal>
                 </div>
             );

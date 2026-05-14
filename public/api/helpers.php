@@ -298,3 +298,14 @@ function app_base_url(): string {
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     return "{$scheme}://{$host}";
 }
+
+/**
+ * Convierte un path relativo (/assets/...) a URL absoluta. Si ya viene absoluta
+ * (http:// o https://) la devuelve tal cual. Usado para incrustar imagenes en
+ * correos, donde los clientes no resuelven paths relativos.
+ */
+function absolute_asset_url(string $path): string {
+    if (preg_match('#^https?://#i', $path)) return $path;
+    $base = app_base_url();
+    return $base . '/' . ltrim($path, '/');
+}

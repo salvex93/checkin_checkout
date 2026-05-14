@@ -61,7 +61,20 @@ function auth_login(array $body): never {
         err('ACCOUNT_LOCKED', "Cuenta bloqueada temporalmente. Intenta en {$remaining} segundos.", 429, ['retry_after' => $remaining]);
     }
 
-    $user = db_one('SELECT id, email, name, password_hash, role, is_active, status, must_change_password FROM users WHERE email = ?', [$email]);
+    $user = db_one(
+        'SELECT u.id, u.email, u.name, u.password_hash, u.role, u.is_active, u.status,
+                u.must_change_password, u.company_id,
+                c.name AS company_name,
+                b.id AS brand_id, b.slug AS brand_slug, b.name AS brand_name,
+                b.logo_url AS brand_logo_url,
+                b.primary_color AS brand_primary_color,
+                b.secondary_color AS brand_secondary_color
+           FROM users u
+           LEFT JOIN companies c ON c.id = u.company_id
+           LEFT JOIN brands b ON b.id = c.brand_id
+          WHERE u.email = ?',
+        [$email]
+    );
 
     // Mensaje generico identico para email inexistente vs password incorrecto
     // (anti enumeracion de usuarios — OWASP A07).
@@ -102,6 +115,14 @@ function auth_login(array $body): never {
             'email' => $user['email'],
             'name' => $user['name'],
             'role' => $user['role'],
+            'company_id' => $user['company_id'] ? (int)$user['company_id'] : null,
+            'company_name' => $user['company_name'] ?? null,
+            'brand_id' => $user['brand_id'] ? (int)$user['brand_id'] : null,
+            'brand_slug' => $user['brand_slug'] ?? null,
+            'brand_name' => $user['brand_name'] ?? null,
+            'brand_logo_url' => $user['brand_logo_url'] ?? null,
+            'brand_primary_color' => $user['brand_primary_color'] ?? null,
+            'brand_secondary_color' => $user['brand_secondary_color'] ?? null,
             'must_change_password' => (int)$user['must_change_password'] === 1
         ],
         'csrf_token' => csrf_token()
@@ -129,7 +150,19 @@ function auth_logout(): never {
 
 function auth_me(): never {
     $u = require_login();
-    $row = db_one('SELECT must_change_password FROM users WHERE id = ?', [$u['id']]);
+    $row = db_one(
+        'SELECT u.must_change_password,
+                c.name AS company_name,
+                b.id AS brand_id, b.slug AS brand_slug, b.name AS brand_name,
+                b.logo_url AS brand_logo_url,
+                b.primary_color AS brand_primary_color,
+                b.secondary_color AS brand_secondary_color
+           FROM users u
+           LEFT JOIN companies c ON c.id = u.company_id
+           LEFT JOIN brands b ON b.id = c.brand_id
+          WHERE u.id = ?',
+        [$u['id']]
+    );
     ok([
         'user' => [
             'id' => (int)$u['id'],
@@ -137,6 +170,13 @@ function auth_me(): never {
             'name' => $u['name'],
             'role' => $u['role'],
             'company_id' => $u['company_id'] ? (int)$u['company_id'] : null,
+            'company_name' => $row['company_name'] ?? null,
+            'brand_id' => $row && $row['brand_id'] !== null ? (int)$row['brand_id'] : null,
+            'brand_slug' => $row['brand_slug'] ?? null,
+            'brand_name' => $row['brand_name'] ?? null,
+            'brand_logo_url' => $row['brand_logo_url'] ?? null,
+            'brand_primary_color' => $row['brand_primary_color'] ?? null,
+            'brand_secondary_color' => $row['brand_secondary_color'] ?? null,
             'must_change_password' => $row ? (int)$row['must_change_password'] === 1 : false
         ],
         'csrf_token' => csrf_token()

@@ -10,16 +10,31 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+CREATE TABLE IF NOT EXISTS brands (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    slug VARCHAR(40) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    logo_url VARCHAR(255) NOT NULL,
+    primary_color VARCHAR(9) NOT NULL DEFAULT '#2563eb',
+    secondary_color VARCHAR(9) NULL,
+    welcome_intro TEXT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS companies (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL UNIQUE,
+    brand_id INT NULL,
     timezone VARCHAR(64) NOT NULL DEFAULT 'America/Mexico_City',
     work_start_time VARCHAR(5) NOT NULL DEFAULT '09:00',
     work_end_time VARCHAR(5) NOT NULL DEFAULT '18:00',
     work_days_mask INT NOT NULL DEFAULT 31,
     grace_minutes_late INT NOT NULL DEFAULT 15,
     is_configured TINYINT(1) NOT NULL DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_companies_brand (brand_id),
+    CONSTRAINT fk_companies_brand FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -133,10 +148,21 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- Seed inicial: empresas con defaults Mexico City L-V 09:00-18:00
-INSERT INTO companies (name, timezone, work_start_time, work_end_time, work_days_mask, grace_minutes_late) VALUES
-    ('Melius Services', 'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Coppel',          'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Hyatt',           'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Arajet',          'America/Mexico_City', '09:00', '18:00', 31, 15)
+-- Seed marcas paraguas
+INSERT INTO brands (slug, name, logo_url, primary_color, secondary_color) VALUES
+    ('melius',  'Melius Services',  '/assets/brands/melius.webp',  '#07d6da', '#9909fe'),
+    ('fullman', 'Fullman Strategy', '/assets/brands/fullman.webp', '#65422a', '#f2e484'),
+    ('netfy',   'Netfy Technology', '/assets/brands/netfy.webp',   '#06c7f4', '#2c2e3a')
+ON DUPLICATE KEY UPDATE slug = slug;
+
+-- Seed empresas cliente con marca paraguas asignada
+INSERT INTO companies (name, brand_id, timezone, work_start_time, work_end_time, work_days_mask, grace_minutes_late) VALUES
+    ('Melius Services', (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Arajet',          (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Elektra',         (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Ecuaquimica',     (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Coppel',          (SELECT id FROM brands WHERE slug='fullman'), 'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('BanCoppel',       (SELECT id FROM brands WHERE slug='fullman'), 'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Hyatt',           (SELECT id FROM brands WHERE slug='netfy'),   'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Philip Morris',   (SELECT id FROM brands WHERE slug='netfy'),   'America/Mexico_City', '09:00', '18:00', 31, 15)
 ON DUPLICATE KEY UPDATE name = name;

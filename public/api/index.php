@@ -51,15 +51,30 @@ if (strlen($endpoint) > 80) {
 $body = in_array($method, ['POST', 'PUT', 'DELETE'], true) ? read_json_body() : [];
 
 // Parser de paths con id: admin/companies/123 -> ('admin/companies', 123)
+// admin/brands/123/logo -> ('admin/brands', 123, 'logo')
 $endpointBase = $endpoint;
 $endpointId = null;
-if (preg_match('#^(admin/companies|admin/users|admin/dashboard/company)/(\d+)$#', $endpoint, $m)) {
+$endpointAction = null;
+if (preg_match('#^(admin/brands)/(\d+)/(logo)$#', $endpoint, $m)) {
+    $endpointBase = $m[1];
+    $endpointId = (int)$m[2];
+    $endpointAction = $m[3];
+} elseif (preg_match('#^(admin/companies|admin/users|admin/brands|admin/dashboard/company)/(\d+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
 }
 
 // === Dispatcher ===
 try {
+    // Rutas con id + accion (subrecurso)
+    if ($endpointId !== null && $endpointAction !== null) {
+        switch ("{$method} {$endpointBase}/{$endpointAction}") {
+            case 'POST admin/brands/logo':
+                admin_brands_upload_logo($endpointId);
+            default:
+                err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
+        }
+    }
     // Rutas con id (PUT/DELETE sobre recursos especificos)
     if ($endpointId !== null) {
         switch ("{$method} {$endpointBase}") {
@@ -69,6 +84,12 @@ try {
                 admin_companies_delete($endpointId);
             case 'PUT admin/users':
                 admin_users_update($endpointId, $body);
+            case 'DELETE admin/users':
+                admin_users_delete($endpointId, $body);
+            case 'PUT admin/brands':
+                admin_brands_update($endpointId, $body);
+            case 'DELETE admin/brands':
+                admin_brands_delete($endpointId);
             case 'GET admin/dashboard/company':
                 admin_dashboard_company($endpointId);
             default:
@@ -133,10 +154,18 @@ try {
             admin_companies_list();
         case 'POST admin/companies':
             admin_companies_create($body);
+        case 'GET admin/brands':
+            admin_brands_list();
+        case 'POST admin/brands':
+            admin_brands_create($body);
         case 'GET admin/users':
             admin_users_list();
         case 'POST admin/users/invite':
             admin_users_invite($body);
+        case 'POST admin/users/bulk-invite':
+            admin_users_bulk_invite($body);
+        case 'GET admin/users/template.csv':
+            admin_users_template_csv();
 
         // --- Admin: dashboards y busqueda (Fase 5) ---
         case 'GET admin/dashboard/global':

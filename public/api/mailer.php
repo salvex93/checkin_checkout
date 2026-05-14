@@ -207,13 +207,21 @@ HTML;
  * flex ni grid. Sirve tanto para usuarios nuevos (con password temporal en
  * los datos) como para demo (sin credenciales, solo CTA).
  *
+ * Personalizable por marca: logo, colores primario/secundario y welcome_intro.
+ * Si los datos de marca no vienen, usa defaults Melius (cyan+violet).
+ *
  * @param array $opts {
- *   @var string name        Nombre del destinatario.
- *   @var string companyName Nombre de la empresa que invita.
- *   @var string loginUrl    URL del login.
- *   @var ?string email           Email del destinatario para mostrar credencial.
+ *   @var string name             Nombre del destinatario.
+ *   @var string companyName      Nombre de la empresa que invita.
+ *   @var string loginUrl         URL del login.
+ *   @var ?string email           Email del destinatario.
  *   @var ?string tempPassword    Password temporal si aplica.
  *   @var ?string introOverride   Texto de intro personalizado opcional.
+ *   @var ?string brandName       Nombre de la marca paraguas (Melius, Fullman, Netfy).
+ *   @var ?string brandLogoUrl    URL ABSOLUTA del logo de la marca.
+ *   @var ?string brandPrimary    Color hex primario.
+ *   @var ?string brandSecondary  Color hex secundario.
+ *   @var ?string brandWelcome    welcome_intro de la marca (HTML escapado).
  * }
  */
 function mail_template_invitation_v2(array $opts): array {
@@ -224,15 +232,36 @@ function mail_template_invitation_v2(array $opts): array {
     $tempPassword = isset($opts['tempPassword']) ? (string)$opts['tempPassword'] : null;
     $intro = isset($opts['introOverride']) ? (string)$opts['introOverride'] : null;
 
+    // Defaults Melius si la marca no viene.
+    $brandName = (string)($opts['brandName'] ?? 'Melius');
+    $brandLogoUrl = isset($opts['brandLogoUrl']) ? (string)$opts['brandLogoUrl'] : null;
+    $brandPrimary = (string)($opts['brandPrimary'] ?? '#07d6da');
+    $brandSecondary = (string)($opts['brandSecondary'] ?? '#9909fe');
+    $brandWelcome = isset($opts['brandWelcome']) ? (string)$opts['brandWelcome'] : null;
+
     $nameSafe = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
     $companySafe = htmlspecialchars($company, ENT_QUOTES, 'UTF-8');
+    $brandNameSafe = htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8');
     $urlSafe = htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8');
     $emailSafe = $email ? htmlspecialchars($email, ENT_QUOTES, 'UTF-8') : null;
     $passSafe = $tempPassword ? htmlspecialchars($tempPassword, ENT_QUOTES, 'UTF-8') : null;
+    $primarySafe = preg_match('/^#[0-9a-fA-F]{3,6}$/', $brandPrimary) ? $brandPrimary : '#07d6da';
+    $secondarySafe = preg_match('/^#[0-9a-fA-F]{3,6}$/', $brandSecondary) ? $brandSecondary : '#9909fe';
 
-    $defaultIntro = "Tu equipo en <strong>{$companySafe}</strong> esta usando Melius Clockin para "
-        . "marcar jornada de forma sencilla. Acabas de ser invitado a sumarte.";
-    $introHtml = $intro !== null ? htmlspecialchars($intro, ENT_QUOTES, 'UTF-8') : $defaultIntro;
+    // Prioridad de intro:
+    //   1) introOverride explicito (tests/demos)
+    //   2) welcome_intro de la marca
+    //   3) fallback automatico con nombre de empresa y marca
+    if ($intro !== null) {
+        $introHtml = htmlspecialchars($intro, ENT_QUOTES, 'UTF-8');
+    } elseif ($brandWelcome !== null && trim($brandWelcome) !== '') {
+        // welcome_intro guardado en DB ya viene como texto plano. Lo escapamos para
+        // evitar inyeccion HTML/JS, y permitimos solo saltos de linea como <br>.
+        $introHtml = nl2br(htmlspecialchars($brandWelcome, ENT_QUOTES, 'UTF-8'));
+    } else {
+        $introHtml = "Tu equipo en <strong>{$companySafe}</strong> esta usando <strong>{$brandNameSafe} Clockin</strong> para "
+            . "marcar jornada de forma sencilla. Acabas de ser invitado a sumarte.";
+    }
 
     $credsBlock = '';
     if ($emailSafe !== null && $passSafe !== null) {
@@ -248,12 +277,19 @@ function mail_template_invitation_v2(array $opts): array {
 HTML;
     }
 
+    // Hero: gradiente con colores de marca. Logo arriba si la marca lo tiene.
+    $logoBlock = '';
+    if ($brandLogoUrl !== null && $brandLogoUrl !== '') {
+        $logoSafe = htmlspecialchars($brandLogoUrl, ENT_QUOTES, 'UTF-8');
+        $logoBlock = '<div style="margin-bottom:14px;"><img src="' . $logoSafe . '" alt="' . $brandNameSafe . '" width="64" height="64" style="display:inline-block;width:64px;height:64px;border-radius:14px;background:#ffffff;padding:6px;border:0;outline:0;"></div>';
+    }
     $hero = <<<HTML
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 50%,#06b6d4 100%);background-color:#1e3a8a;border-radius:14px 14px 0 0;">
-  <tr><td align="center" style="padding:36px 28px 32px 28px;color:#ffffff;font-family:Segoe UI,-apple-system,Roboto,Arial,sans-serif;">
-    <div style="font-size:11px;letter-spacing:0.32em;text-transform:uppercase;opacity:0.85;font-weight:700;">Melius Clockin</div>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:linear-gradient(135deg,{$primarySafe} 0%,{$secondarySafe} 100%);background-color:{$primarySafe};border-radius:14px 14px 0 0;">
+  <tr><td align="center" style="padding:32px 28px 30px 28px;color:#ffffff;font-family:Segoe UI,-apple-system,Roboto,Arial,sans-serif;">
+    {$logoBlock}
+    <div style="font-size:11px;letter-spacing:0.32em;text-transform:uppercase;opacity:0.92;font-weight:700;">{$brandNameSafe} Clockin</div>
     <div style="font-size:26px;font-weight:800;line-height:1.2;margin-top:10px;">Bienvenido a bordo, {$nameSafe}</div>
-    <div style="font-size:14px;margin-top:8px;opacity:0.92;">Marca jornada en segundos. Sin Excel. Sin friccion.</div>
+    <div style="font-size:14px;margin-top:8px;opacity:0.94;">Marca jornada en segundos. Sin Excel. Sin friccion.</div>
   </td></tr>
 </table>
 HTML;
@@ -277,11 +313,12 @@ HTML;
 </table>
 HTML;
 
+    // CTA con color de marca.
     $cta = <<<HTML
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:20px auto 8px auto;">
-  <tr><td align="center" bgcolor="#2563eb" style="border-radius:10px;">
-    <a href="{$urlSafe}" style="display:inline-block;padding:14px 28px;font-family:Segoe UI,Arial,sans-serif;font-size:14px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px;background:#2563eb;">
-      Entrar a Melius Clockin
+  <tr><td align="center" bgcolor="{$primarySafe}" style="border-radius:10px;">
+    <a href="{$urlSafe}" style="display:inline-block;padding:14px 28px;font-family:Segoe UI,Arial,sans-serif;font-size:14px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px;background:{$primarySafe};">
+      Entrar a {$brandNameSafe} Clockin
     </a>
   </td></tr>
 </table>
@@ -293,7 +330,7 @@ HTML;
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bienvenido a Melius Clockin</title>
+<title>Bienvenido a {$brandNameSafe} Clockin</title>
 </head>
 <body style="margin:0;padding:24px 12px;background:#eef2f7;font-family:Segoe UI,-apple-system,Roboto,Arial,sans-serif;color:#1f2937;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="600" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -310,17 +347,22 @@ HTML;
     <span style="color:#334155;">{$urlSafe}</span>
   </td></tr>
   <tr><td style="padding:14px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;text-align:center;font-family:Segoe UI,Arial,sans-serif;">
-    Enviado por noreply@fullman.tech para {$companySafe} via Melius Clockin.
+    Enviado por noreply@fullman.tech para {$companySafe} via {$brandNameSafe} Clockin.
   </td></tr>
 </table>
 </body>
 </html>
 HTML;
 
+    $textIntro = $intro !== null
+        ? $intro
+        : ($brandWelcome !== null && trim($brandWelcome) !== ''
+            ? $brandWelcome
+            : "Tu equipo en {$company} esta usando {$brandName} Clockin para marcar jornada.");
     $textParts = [
         "Hola {$name},",
         '',
-        $intro !== null ? $intro : "Tu equipo en {$company} esta usando Melius Clockin para marcar jornada.",
+        $textIntro,
         '',
     ];
     if ($email !== null && $tempPassword !== null) {
@@ -334,8 +376,74 @@ HTML;
     $textParts[] = "Inicia sesion en: {$loginUrl}";
 
     return [
-        'subject' => "Bienvenido a Melius Clockin · {$company}",
+        'subject' => "Bienvenido a {$brandName} Clockin · {$company}",
         'html' => $html,
         'text' => implode("\n", $textParts),
+    ];
+}
+
+/**
+ * Aviso al admin afectado tras desactivacion (soft delete) por otro admin.
+ * No contiene credenciales. Si el admin considera que es un error, contacta soporte.
+ */
+function mail_template_admin_disabled(string $name, string $companyName, string $actorName): array {
+    $nameSafe = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+    $companySafe = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
+    $actorSafe = htmlspecialchars($actorName, ENT_QUOTES, 'UTF-8');
+    $supportSafe = htmlspecialchars(SUPPORT_EMAIL, ENT_QUOTES, 'UTF-8');
+
+    $body = <<<HTML
+<p style="margin:0 0 12px 0;">Hola <strong>{$nameSafe}</strong>,</p>
+<p style="margin:0 0 12px 0;">Tu cuenta de administrador en <strong>Melius Clockin</strong> ({$companySafe}) fue desactivada por <strong>{$actorSafe}</strong>.</p>
+<p style="margin:0 0 12px 0;">A partir de este momento no podras iniciar sesion. Tus registros historicos se conservan.</p>
+<p style="margin:0 0 12px 0;">Si crees que es un error, responde este correo o escribe a <a href="mailto:{$supportSafe}" style="color:#2563eb;text-decoration:none;">{$supportSafe}</a>.</p>
+HTML;
+
+    $text = "Hola {$name},\n\n"
+        . "Tu cuenta de administrador en Melius Clockin ({$companyName}) fue desactivada por {$actorName}.\n"
+        . "A partir de este momento no podras iniciar sesion. Tus registros historicos se conservan.\n\n"
+        . "Si crees que es un error, responde este correo o escribe a " . SUPPORT_EMAIL . ".";
+
+    return [
+        'subject' => "Tu cuenta de administrador fue desactivada · Melius Clockin",
+        'html' => tpl_layout('Cuenta desactivada', $body),
+        'text' => $text,
+    ];
+}
+
+/**
+ * Recibo al admin que ejecuto la desactivacion. Confirmacion + traza para el actor.
+ */
+function mail_template_admin_delete_receipt(string $actorName, string $targetName, string $targetEmail, string $companyName): array {
+    $actorSafe = htmlspecialchars($actorName, ENT_QUOTES, 'UTF-8');
+    $targetNameSafe = htmlspecialchars($targetName, ENT_QUOTES, 'UTF-8');
+    $targetEmailSafe = htmlspecialchars($targetEmail, ENT_QUOTES, 'UTF-8');
+    $companySafe = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
+    $whenSafe = htmlspecialchars(date('Y-m-d H:i:s'), ENT_QUOTES, 'UTF-8');
+
+    $body = <<<HTML
+<p style="margin:0 0 12px 0;">Hola <strong>{$actorSafe}</strong>,</p>
+<p style="margin:0 0 12px 0;">Confirmamos que desactivaste la siguiente cuenta de administrador:</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0 16px 0;border-collapse:collapse;">
+  <tr><td style="padding:6px 0;font-size:13px;color:#475569;width:130px;">Nombre</td><td style="padding:6px 0;font-size:13px;color:#0f172a;"><strong>{$targetNameSafe}</strong></td></tr>
+  <tr><td style="padding:6px 0;font-size:13px;color:#475569;">Correo</td><td style="padding:6px 0;font-size:13px;color:#0f172a;">{$targetEmailSafe}</td></tr>
+  <tr><td style="padding:6px 0;font-size:13px;color:#475569;">Empresa</td><td style="padding:6px 0;font-size:13px;color:#0f172a;">{$companySafe}</td></tr>
+  <tr><td style="padding:6px 0;font-size:13px;color:#475569;">Fecha</td><td style="padding:6px 0;font-size:13px;color:#0f172a;">{$whenSafe}</td></tr>
+</table>
+<p style="margin:0 0 12px 0;font-size:13px;color:#475569;">La desactivacion es reversible desde el panel admin (cambiar status a active). Los registros historicos del usuario se conservan.</p>
+HTML;
+
+    $text = "Hola {$actorName},\n\n"
+        . "Confirmamos que desactivaste la siguiente cuenta de administrador:\n\n"
+        . "  Nombre:  {$targetName}\n"
+        . "  Correo:  {$targetEmail}\n"
+        . "  Empresa: {$companyName}\n"
+        . "  Fecha:   {$whenSafe}\n\n"
+        . "La desactivacion es reversible desde el panel admin (status active). Los registros se conservan.";
+
+    return [
+        'subject' => "Confirmacion: desactivaste a {$targetEmail} · Melius Clockin",
+        'html' => tpl_layout('Recibo de desactivacion', $body),
+        'text' => $text,
     ];
 }

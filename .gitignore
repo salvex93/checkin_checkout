@@ -41,3 +41,7 @@ __pycache__/
 # Cookies de smoke tests con curl
 cookies.txt
 cookies-*.txt
+
+# Uploads runtime (logos subidos por admin, previews de email).
+# Los logos seed bajo public/assets/brands/ SI se commitean.
+public/uploads/

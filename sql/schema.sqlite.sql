@@ -3,17 +3,33 @@
 
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS brands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    logo_url TEXT NOT NULL,
+    primary_color TEXT NOT NULL DEFAULT '#2563eb',
+    secondary_color TEXT NULL,
+    welcome_intro TEXT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    brand_id INTEGER NULL,
     timezone TEXT NOT NULL DEFAULT 'America/Mexico_City',
     work_start_time TEXT NOT NULL DEFAULT '09:00',
     work_end_time TEXT NOT NULL DEFAULT '18:00',
     work_days_mask INTEGER NOT NULL DEFAULT 31,
     grace_minutes_late INTEGER NOT NULL DEFAULT 15,
     is_configured INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_companies_brand ON companies(brand_id);
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,10 +152,20 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_user_event ON audit_log(user_id, event);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 
--- Seed: empresas con defaults Mexico City L-V 09:00-18:00
-INSERT OR IGNORE INTO companies (name, timezone, work_start_time, work_end_time, work_days_mask, grace_minutes_late)
+-- Seed marcas paraguas
+INSERT OR IGNORE INTO brands (slug, name, logo_url, primary_color, secondary_color) VALUES
+    ('melius',  'Melius Services',  '/assets/brands/melius.webp',  '#07d6da', '#9909fe'),
+    ('fullman', 'Fullman Strategy', '/assets/brands/fullman.webp', '#65422a', '#f2e484'),
+    ('netfy',   'Netfy Technology', '/assets/brands/netfy.webp',   '#06c7f4', '#2c2e3a');
+
+-- Seed empresas cliente con marca paraguas asignada
+INSERT OR IGNORE INTO companies (name, brand_id, timezone, work_start_time, work_end_time, work_days_mask, grace_minutes_late)
 VALUES
-    ('Melius Services', 'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Coppel',          'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Hyatt',           'America/Mexico_City', '09:00', '18:00', 31, 15),
-    ('Arajet',          'America/Mexico_City', '09:00', '18:00', 31, 15);
+    ('Melius Services', (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Arajet',          (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Elektra',         (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Ecuaquimica',     (SELECT id FROM brands WHERE slug='melius'),  'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Coppel',          (SELECT id FROM brands WHERE slug='fullman'), 'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('BanCoppel',       (SELECT id FROM brands WHERE slug='fullman'), 'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Hyatt',           (SELECT id FROM brands WHERE slug='netfy'),   'America/Mexico_City', '09:00', '18:00', 31, 15),
+    ('Philip Morris',   (SELECT id FROM brands WHERE slug='netfy'),   'America/Mexico_City', '09:00', '18:00', 31, 15);
