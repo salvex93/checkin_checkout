@@ -6,6 +6,8 @@
 # Herramientas internas del entorno de desarrollo (no se publican)
 .claude/
 !.claude/.gitkeep
+# CLAUDE.md es hardlink al del nucleo ai-core (derivado, no contenido del proyecto)
+CLAUDE.md
 
 # Base de datos local SQLite
 storage/
