@@ -503,7 +503,7 @@ function admin_companies_delete(int $id): never {
 
     $active = db_one('SELECT COUNT(*) AS c FROM users WHERE company_id = ? AND is_active = 1', [$id]);
     if ((int)$active['c'] > 0) {
-        err('CONFLICT', 'No se puede eliminar: la empresa tiene agentes activos asignados.', 409, ['active_users' => (int)$active['c']]);
+        err('CONFLICT', 'No se puede eliminar: la empresa tiene consultores activos asignados.', 409, ['active_users' => (int)$active['c']]);
     }
     db_exec('DELETE FROM companies WHERE id = ?', [$id]);
     audit_log((int)$admin['id'], 'admin_company_delete', ['company_id' => $id, 'name' => $existing['name']]);
@@ -546,20 +546,20 @@ function admin_users_update(int $id, array $body): never {
     require_csrf();
     $admin = require_admin();
     $user = db_one('SELECT id, role, company_id FROM users WHERE id = ?', [$id]);
-    if (!$user) err('NOT_FOUND', 'Agente no encontrado.', 404);
+    if (!$user) err('NOT_FOUND', 'Consultor no encontrado.', 404);
 
     // Blindaje super_admin: solo otro super_admin puede tocarlo. Para admins
     // normales, el super_admin es invisible — respondemos NOT_FOUND para no
     // filtrar su existencia (anti-enumeracion).
     if ($user['role'] === 'super_admin' && ($admin['role'] ?? '') !== 'super_admin') {
-        err('NOT_FOUND', 'Agente no encontrado.', 404);
+        err('NOT_FOUND', 'Consultor no encontrado.', 404);
     }
 
     // Scope por empresa: admin normal solo puede modificar usuarios DE SU EMPRESA.
     // Si no, NOT_FOUND (no filtramos que el usuario existe en otra empresa).
     $isSuper = ($admin['role'] ?? '') === 'super_admin';
     if (!$isSuper && (int)($user['company_id'] ?? 0) !== (int)($admin['company_id'] ?? -1)) {
-        err('NOT_FOUND', 'Agente no encontrado.', 404);
+        err('NOT_FOUND', 'Consultor no encontrado.', 404);
     }
 
     $companyId = null;
@@ -570,7 +570,7 @@ function admin_users_update(int $id, array $body): never {
         }
         // Admin normal no puede mover usuarios a otra empresa.
         if (!$isSuper && $companyId !== (int)$admin['company_id']) {
-            err('FORBIDDEN', 'No puedes asignar agentes a otra empresa.', 403, ['field' => 'company_id']);
+            err('FORBIDDEN', 'No puedes asignar consultores a otra empresa.', 403, ['field' => 'company_id']);
         }
     }
 
@@ -601,7 +601,7 @@ function admin_users_update(int $id, array $body): never {
     audit_log((int)$admin['id'], 'admin_user_update', [
         'user_id' => $id, 'company_id' => $companyId, 'status' => $status
     ]);
-    ok(['message' => 'Agente actualizado.']);
+    ok(['message' => 'Consultor actualizado.']);
 }
 
 /**
@@ -706,7 +706,7 @@ function admin_users_invite(array $body): never {
     }
     // Consultor obligatoriamente vinculado a una empresa.
     if ($role === 'consultant' && $companyId === null) {
-        err('INVALID_INPUT', 'Los agentes requieren empresa asignada.', 400, ['field' => 'company_id']);
+        err('INVALID_INPUT', 'Los consultores requieren empresa asignada.', 400, ['field' => 'company_id']);
     }
     // Admin tambien marca jornada como empleado: requiere empresa al darlo de alta.
     // super_admin queda fuera de este flujo (no se crea via admin_users_invite).

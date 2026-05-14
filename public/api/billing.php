@@ -132,7 +132,7 @@ function admin_billing_connect(array $body): never {
     // Por ahora retornamos NOT_IMPLEMENTED con un enlace placeholder. El frontend
     // muestra un dialogo explicando que la integracion esta pendiente.
     audit_log((int)$admin['id'], 'billing_connect_attempt', ['provider' => $provider]);
-    err('NOT_IMPLEMENTED', "Integracion con {$provider} pendiente. Configura las credenciales en .env y un agente las activara.", 501, [
+    err('NOT_IMPLEMENTED', "Integracion con {$provider} pendiente. Configura las credenciales en .env y un administrador las activara.", 501, [
         'provider' => $provider,
         'next_steps' => [
             $provider === 'stripe'

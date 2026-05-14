@@ -1092,7 +1092,7 @@
             const primaryTabs = [
                 { id: 'dashboard', label: 'Dashboard', icon: 'Home' },
                 { id: 'records', label: 'Registros', icon: 'FileText' },
-                { id: 'agents', label: 'Agentes', icon: 'Users' },
+                { id: 'agents', label: 'Consultores', icon: 'Users' },
                 { id: 'requests', label: 'Solicitudes', icon: 'Bell' },
             ];
             const secondaryTabs = [
@@ -1400,7 +1400,7 @@
                         <Kpi label="Registros hoy" value={t.records_today ?? 0} />
                         <Kpi label="Registros semana" value={t.records_week ?? 0} />
                         <Kpi label="Registros mes" value={t.records_month ?? 0} />
-                        <Kpi label="Agentes activos" value={t.active_users ?? 0} />
+                        <Kpi label="Consultores activos" value={t.active_users ?? 0} />
                         <Kpi label="Retrasos del mes" value={t.late_month ?? 0} />
                         <Kpi label="Ausencias del mes" value={t.absences_month ?? 0} />
                         <Kpi label="Extras pendientes (h)" value={(t.overtime_pending_hours ?? 0).toFixed(1)} />
@@ -1408,7 +1408,7 @@
                     </div>
                     {data?.by_company?.length > 0 && (
                         <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
-                            <h3 className="font-black uppercase tracking-widest text-xs text-slate-500 mb-3">Agentes activos por empresa</h3>
+                            <h3 className="font-black uppercase tracking-widest text-xs text-slate-500 mb-3">Consultores activos por empresa</h3>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {data.by_company.map(b => (
                                     <div key={b.company_id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 px-3 py-2 rounded-xl">
@@ -2360,7 +2360,7 @@
                                             <h4 className="font-black text-slate-800 dark:text-slate-100 truncate">{c.name}</h4>
                                             {c.brand_name && <p className="text-[10px] font-black uppercase tracking-widest text-melius-cyan">{c.brand_name}</p>}
                                             <p className="text-[11px] text-slate-400 font-mono mt-1">{c.timezone} · {c.work_start_time}–{c.work_end_time} · gracia {c.grace_minutes_late}m</p>
-                                            <p className="text-[11px] text-slate-500 mt-1">Agentes activos: {c.active_users}</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">Consultores activos: {c.active_users}</p>
                                         </div>
                                     </div>
                                     <div className="flex flex-col gap-1 shrink-0 items-end">
@@ -2697,6 +2697,41 @@
             );
         };
 
+        const ResendInviteModal = ({ open, target, busy, onConfirm, onCancel }) => (
+            <Modal open={open} onClose={onCancel} title="Reenviar invitacion" maxWidth="max-w-lg">
+                <div className="flex items-start gap-3 mb-4">
+                    <div className="shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-purple-500 flex items-center justify-center text-white">
+                        <Icon name="Mail" size={22} />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">Reenviar invitacion</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                            Se generara una nueva password temporal y se enviara un correo de bienvenida actualizado.
+                        </p>
+                    </div>
+                </div>
+                {target && (
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-4">
+                        <p className="font-bold text-slate-800 dark:text-slate-100">{target.name}</p>
+                        <p className="text-xs text-slate-500 truncate">{target.email}</p>
+                        <p className="text-xs text-slate-500 mt-1">{target.company_name || 'Sin empresa'}</p>
+                    </div>
+                )}
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-3 mb-4">
+                    <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                        <strong>Importante:</strong> la password temporal anterior dejara de funcionar. El usuario debera usar la nueva que llegue por correo.
+                    </p>
+                </div>
+                <div className="flex gap-2 justify-end">
+                    <button onClick={onCancel} disabled={busy} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-sm disabled:opacity-60">Cancelar</button>
+                    <button onClick={onConfirm} disabled={busy} className="px-4 py-2 rounded-xl btn-melius font-bold text-sm disabled:opacity-60 inline-flex items-center gap-2">
+                        {busy && <Icon name="Spinner" size={16} />}
+                        {busy ? 'Enviando...' : 'Reenviar invitacion'}
+                    </button>
+                </div>
+            </Modal>
+        );
+
         const AgentsTab = ({ isSuper }) => {
             const { push: toast } = useToast();
             const [q, setQ] = useState('');
@@ -2708,6 +2743,8 @@
             const [error, setError] = useState(null);
             const [inviting, setInviting] = useState(false);
             const [bulkOpen, setBulkOpen] = useState(false);
+            const [resending, setResending] = useState(null);
+            const [resendBusy, setResendBusy] = useState(false);
             const load = useCallback(async () => {
                 setLoading(true); setError(null);
                 try {
@@ -2736,15 +2773,20 @@
                     await apiFetch(`admin/users/${a.id}`, { method: 'PUT', body: {
                         company_id: a.company_id, status: next,
                     }});
-                    toast('success', 'Agente actualizado.'); load();
+                    toast('success', 'Consultor actualizado.'); load();
                 } catch (e) { toast('error', e.message); }
             };
-            const resendInvite = async (a) => {
-                if (!confirm(`Se generara una nueva password temporal para ${a.email} y se enviara un nuevo correo de invitacion. ¿Continuar?`)) return;
+            const openResend = (a) => { setResending(a); };
+            const closeResend = () => { if (!resendBusy) { setResending(null); } };
+            const doResend = async () => {
+                if (!resending) return;
+                setResendBusy(true);
                 try {
-                    await apiFetch(`admin/users/${a.id}/resend-invite`, { method: 'POST' });
-                    toast('success', 'Invitacion reenviada.');
+                    await apiFetch(`admin/users/${resending.id}/resend-invite`, { method: 'POST' });
+                    toast('success', 'Invitacion reenviada con nueva password temporal.');
+                    setResending(null);
                 } catch (e) { toast('error', e.message); }
+                finally { setResendBusy(false); }
             };
 
             return (
@@ -2784,7 +2826,10 @@
                                     ) : null}
                                     <div className="flex items-center gap-2 ml-auto">
                                         {a.must_change_password && a.status === 'active' && (
-                                            <button onClick={() => resendInvite(a)} className="text-xs font-bold text-cyan-600 hover:underline">Reenviar invitacion</button>
+                                            <button onClick={() => openResend(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-50 text-cyan-600 hover:bg-cyan-100 dark:bg-cyan-900/30 dark:text-cyan-300 inline-flex items-center gap-1.5">
+                                                <Icon name="Mail" size={14} />
+                                                Reenviar invitacion
+                                            </button>
                                         )}
                                         <button onClick={() => toggleStatus(a)} className="text-xs font-bold text-blue-600 hover:underline">{a.status === 'active' ? 'Desactivar' : 'Activar'}</button>
                                     </div>
@@ -2793,10 +2838,11 @@
                             {data.agents.length === 0 && <EmptyState message="Sin resultados" />}
                         </div>
                     )}
-                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar agente" maxWidth="max-w-2xl">
-                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar agente</h3>
+                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar consultor" maxWidth="max-w-2xl">
+                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar consultor</h3>
                         <InviteForm defaultRole="consultant" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
                     </Modal>
+                    <ResendInviteModal open={!!resending} target={resending} busy={resendBusy} onConfirm={doResend} onCancel={closeResend} />
                     <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title="Carga masiva CSV" maxWidth="max-w-3xl">
                         <BulkInviteForm
                             isSuper={isSuper}
@@ -3191,6 +3237,8 @@
             const [deleting, setDeleting] = useState(null);
             const [confirmEmail, setConfirmEmail] = useState('');
             const [busy, setBusy] = useState(false);
+            const [resending, setResending] = useState(null);
+            const [resendBusy, setResendBusy] = useState(false);
             const load = useCallback(async () => {
                 setLoading(true); setError(null);
                 try {
@@ -3206,12 +3254,17 @@
                 catch (e) { toast('error', e.message); }
             };
 
-            const resendInvite = async (a) => {
-                if (!confirm(`Se generara una nueva password temporal para ${a.email} y se enviara un nuevo correo de invitacion. ¿Continuar?`)) return;
+            const openResend = (a) => { setResending(a); };
+            const closeResend = () => { if (!resendBusy) { setResending(null); } };
+            const doResend = async () => {
+                if (!resending) return;
+                setResendBusy(true);
                 try {
-                    await apiFetch(`admin/users/${a.id}/resend-invite`, { method: 'POST' });
-                    toast('success', 'Invitacion reenviada.');
+                    await apiFetch(`admin/users/${resending.id}/resend-invite`, { method: 'POST' });
+                    toast('success', 'Invitacion reenviada con nueva password temporal.');
+                    setResending(null);
                 } catch (e) { toast('error', e.message); }
+                finally { setResendBusy(false); }
             };
 
             const openDelete = (admin) => { setDeleting(admin); setConfirmEmail(''); };
@@ -3259,7 +3312,10 @@
                                         <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">pendiente</span>
                                     ) : null}
                                     {a.must_change_password && a.status === 'active' && !isTargetSuper && (
-                                        <button onClick={() => resendInvite(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-50 text-cyan-600 hover:bg-cyan-100 dark:bg-cyan-900/30 dark:text-cyan-300">Reenviar invitacion</button>
+                                        <button onClick={() => openResend(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-50 text-cyan-600 hover:bg-cyan-100 dark:bg-cyan-900/30 dark:text-cyan-300 inline-flex items-center gap-1.5">
+                                            <Icon name="Mail" size={14} />
+                                            Reenviar invitacion
+                                        </button>
                                     )}
                                     {canDelete && (
                                         <button onClick={() => openDelete(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300">Eliminar</button>
@@ -3297,6 +3353,7 @@
                             <button onClick={doDelete} disabled={!canConfirmDelete || busy} className={`px-4 py-2 rounded-xl font-bold text-sm text-white ${canConfirmDelete && !busy ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed'}`}>{busy ? 'Eliminando...' : 'Eliminar'}</button>
                         </div>
                     </Modal>
+                    <ResendInviteModal open={!!resending} target={resending} busy={resendBusy} onConfirm={doResend} onCancel={closeResend} />
                 </div>
             );
         };

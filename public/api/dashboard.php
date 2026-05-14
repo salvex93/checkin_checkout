@@ -341,7 +341,7 @@ function admin_records_export(): never {
     // BOM UTF-8 para que Excel reconozca acentos correctamente.
     fwrite($out, "\xEF\xBB\xBF");
     fputcsv($out, [
-        'fecha', 'agente', 'email', 'empresa',
+        'fecha', 'consultor', 'email', 'empresa',
         'clockin', 'clockout', 'horas_trabajadas',
         'status', 'horas_extra', 'overtime_status'
     ]);
