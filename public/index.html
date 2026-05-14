@@ -190,6 +190,7 @@
                 Check: <path d="M20 6 9 17l-5-5"/>,
                 X: <path d="M18 6 6 18M6 6l12 12"/>,
                 Mail: (<><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>),
+                ArrowDown: <path d="M12 5v14M19 12l-7 7-7-7"/>,
                 Lock: (<><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>),
                 Sun: (<><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></>),
                 Moon: <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>,
@@ -2789,6 +2790,19 @@
                 finally { setResendBusy(false); }
             };
 
+            const promoteToAdmin = async (a) => {
+                if (!a.company_id) {
+                    toast('error', 'El consultor debe tener empresa asignada antes de promoverlo a admin.');
+                    return;
+                }
+                try {
+                    await apiFetch(`admin/users/${a.id}`, { method: 'PUT', body: {
+                        company_id: a.company_id, status: a.status, role: 'admin',
+                    }});
+                    toast('success', 'Promovido a administrador.'); load();
+                } catch (e) { toast('error', e.message); }
+            };
+
             return (
                 <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -2829,6 +2843,12 @@
                                             <button onClick={() => openResend(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-50 text-cyan-600 hover:bg-cyan-100 dark:bg-cyan-900/30 dark:text-cyan-300 inline-flex items-center gap-1.5">
                                                 <Icon name="Mail" size={14} />
                                                 Reenviar invitacion
+                                            </button>
+                                        )}
+                                        {isSuper && a.role === 'consultant' && a.company_id && a.status === 'active' && (
+                                            <button onClick={() => promoteToAdmin(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 inline-flex items-center gap-1.5">
+                                                <Icon name="ShieldCheck" size={14} />
+                                                Promover a admin
                                             </button>
                                         )}
                                         <button onClick={() => toggleStatus(a)} className="text-xs font-bold text-blue-600 hover:underline">{a.status === 'active' ? 'Desactivar' : 'Activar'}</button>
@@ -3275,17 +3295,26 @@
                 if (!deleting || !canConfirmDelete) return;
                 setBusy(true);
                 try {
-                    await apiFetch(`admin/users/${deleting.id}`, {
+                    const res = await apiFetch(`admin/users/${deleting.id}`, {
                         method: 'DELETE',
                         body: { email_confirmation: confirmEmail.trim() }
                     });
-                    toast('success', 'Administrador desactivado.');
+                    toast('success', res?.message || 'Administrador procesado.');
                     closeDelete();
                     load();
                 } catch (e) {
                     toast('error', e.message);
                     setBusy(false);
                 }
+            };
+
+            const demoteToConsultant = async (a) => {
+                try {
+                    await apiFetch(`admin/users/${a.id}`, { method: 'PUT', body: {
+                        company_id: a.company_id, status: a.status, role: 'consultant',
+                    }});
+                    toast('success', 'Bajado a consultor.'); load();
+                } catch (e) { toast('error', e.message); }
             };
 
             if (loading) return <LoadingScreen />;
@@ -3317,8 +3346,16 @@
                                             Reenviar invitacion
                                         </button>
                                     )}
+                                    {isSuper && !isSelf && !isTargetSuper && a.status === 'active' && a.company_id && (
+                                        <button onClick={() => demoteToConsultant(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 inline-flex items-center gap-1.5">
+                                            <Icon name="ArrowDown" size={14} />
+                                            Bajar a consultor
+                                        </button>
+                                    )}
                                     {canDelete && (
-                                        <button onClick={() => openDelete(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300">Eliminar</button>
+                                        <button onClick={() => openDelete(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300">
+                                            {a.company_id ? 'Eliminar' : 'Desactivar'}
+                                        </button>
                                     )}
                                 </div>
                             );
@@ -3329,9 +3366,17 @@
                         <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar administrador</h3>
                         <InviteForm defaultRole="admin" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
                     </Modal>
-                    <Modal open={!!deleting} onClose={closeDelete} title="Eliminar administrador" maxWidth="max-w-lg">
-                        <h3 className="text-xl font-black mb-2 text-slate-800 dark:text-slate-100">Eliminar administrador</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">Esta accion desactiva la cuenta del administrador. Se envia un aviso al afectado y un recibo a tu correo. La cuenta se puede reactivar despues cambiando su status a active.</p>
+                    <Modal open={!!deleting} onClose={closeDelete} title={deleting?.company_id ? 'Eliminar administrador' : 'Desactivar administrador'} maxWidth="max-w-lg">
+                        <h3 className="text-xl font-black mb-2 text-slate-800 dark:text-slate-100">{deleting?.company_id ? 'Eliminar administrador' : 'Desactivar administrador'}</h3>
+                        {deleting?.company_id ? (
+                            <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+                                Como el administrador tiene <strong>{deleting.company_name}</strong> asignada, lo convertimos en <strong>consultor</strong> de esa empresa. Conserva acceso para marcar jornada pero pierde sus permisos administrativos. Su historico queda intacto.
+                            </p>
+                        ) : (
+                            <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+                                Esta accion desactiva la cuenta del administrador (no tiene empresa asignada). Se envia un aviso al afectado y un recibo a tu correo. La cuenta se puede reactivar despues.
+                            </p>
+                        )}
                         {deleting && (
                             <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-4 text-sm">
                                 <p className="font-bold text-slate-800 dark:text-slate-100">{deleting.name}</p>
@@ -3350,7 +3395,7 @@
                         />
                         <div className="flex gap-2 mt-4 justify-end">
                             <button onClick={closeDelete} disabled={busy} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-sm">Cancelar</button>
-                            <button onClick={doDelete} disabled={!canConfirmDelete || busy} className={`px-4 py-2 rounded-xl font-bold text-sm text-white ${canConfirmDelete && !busy ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed'}`}>{busy ? 'Eliminando...' : 'Eliminar'}</button>
+                            <button onClick={doDelete} disabled={!canConfirmDelete || busy} className={`px-4 py-2 rounded-xl font-bold text-sm text-white ${canConfirmDelete && !busy ? (deleting?.company_id ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700') : 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed'}`}>{busy ? 'Procesando...' : (deleting?.company_id ? 'Convertir en consultor' : 'Desactivar')}</button>
                         </div>
                     </Modal>
                     <ResendInviteModal open={!!resending} target={resending} busy={resendBusy} onConfirm={doResend} onCancel={closeResend} />

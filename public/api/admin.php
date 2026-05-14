@@ -582,6 +582,34 @@ function admin_users_update(int $id, array $body): never {
         err('CONFLICT', 'No puedes desactivarte a ti mismo.', 409);
     }
 
+    // Cambio de rol entre consultant y admin (super_admin nunca via este endpoint).
+    // Reglas:
+    //   - super_admin como TARGET ya fue bloqueado arriba.
+    //   - Solo super_admin puede promover/degradar entre admin <-> consultant
+    //     (decision de gobierno: un admin normal no asciende a sus pares).
+    //   - admin requiere company_id obligatorio para marcar jornada (mismo
+    //     contrato que admin_users_invite).
+    //   - No auto-degradarse.
+    $newRole = null;
+    if (array_key_exists('role', $body) && $body['role'] !== null && $body['role'] !== '') {
+        $newRole = validate_string($body, 'role', 1, 20);
+        if (!in_array($newRole, ['consultant', 'admin'], true)) {
+            err('INVALID_INPUT', 'Rol invalido. Solo consultant o admin.', 400, ['field' => 'role']);
+        }
+        if ($newRole !== $user['role']) {
+            if (!$isSuper) {
+                err('FORBIDDEN', 'Solo super_admin puede cambiar el rol entre admin y consultor.', 403, ['field' => 'role']);
+            }
+            if ((int)$admin['id'] === $id) {
+                err('CONFLICT', 'No puedes cambiar tu propio rol.', 409, ['field' => 'role']);
+            }
+            $effectiveCompany = $companyId ?? (int)($user['company_id'] ?? 0);
+            if ($newRole === 'admin' && $effectiveCompany <= 0) {
+                err('INVALID_INPUT', 'Para promover a admin se requiere empresa asignada.', 400, ['field' => 'company_id']);
+            }
+        }
+    }
+
     $tz = isset($body['timezone']) && $body['timezone'] !== '' ? validate_timezone($body, 'timezone') : null;
     $start = isset($body['work_start_time']) && $body['work_start_time'] !== '' ? validate_time_hhmm($body, 'work_start_time') : null;
     $end = isset($body['work_end_time']) && $body['work_end_time'] !== '' ? validate_time_hhmm($body, 'work_end_time') : null;
@@ -592,14 +620,16 @@ function admin_users_update(int $id, array $body): never {
     }
 
     $isActive = $status === 'active' ? 1 : 0;
+    $roleToSet = $newRole ?? $user['role'];
     db_exec(
-        'UPDATE users SET company_id = ?, status = ?, is_active = ?,
+        'UPDATE users SET company_id = ?, status = ?, is_active = ?, role = ?,
                           timezone = ?, work_start_time = ?, work_end_time = ?, work_days_mask = ?
                  WHERE id = ?',
-        [$companyId, $status, $isActive, $tz, $start, $end, $mask, $id]
+        [$companyId, $status, $isActive, $roleToSet, $tz, $start, $end, $mask, $id]
     );
     audit_log((int)$admin['id'], 'admin_user_update', [
-        'user_id' => $id, 'company_id' => $companyId, 'status' => $status
+        'user_id' => $id, 'company_id' => $companyId, 'status' => $status,
+        'role_from' => $user['role'], 'role_to' => $roleToSet,
     ]);
     ok(['message' => 'Consultor actualizado.']);
 }
@@ -1035,16 +1065,19 @@ function admin_users_bulk_invite(array $body): never {
 }
 
 /**
- * DELETE admin/users/{id} — soft delete con confirmacion por email tipeado.
- * Reglas:
- *   - super_admin es intocable para admins normales (NOT_FOUND anti-enumeracion).
- *   - Solo otro super_admin puede desactivar a un super_admin (defensa adicional;
- *     en la practica no se expone via UI todavia).
+ * DELETE admin/users/{id} — politica de "eliminacion" segun rol y empresa:
+ *   - admin CON company_id  -> downgrade a consultant, queda active.
+ *                              Pierde permisos administrativos pero sigue
+ *                              pudiendo marcar jornada con su empresa.
+ *   - admin SIN company_id  -> soft delete (status=disabled, is_active=0).
+ *   - consultant            -> soft delete (status=disabled, is_active=0).
+ *
+ * Otras reglas:
+ *   - super_admin invisible para admins normales (anti-enumeracion).
+ *   - Super_admin como target solo lo toca otro super_admin.
  *   - Admin no puede auto-eliminarse.
- *   - Body debe incluir email_confirmation que coincida exactamente con el email
- *     del target (defensa server-side contra clicks accidentales).
- *   - Marca status='disabled', is_active=0. No borra fila. Conserva historico.
- *   - Envia email al afectado + recibo al actor. Audit log.
+ *   - email_confirmation obligatorio (defensa server-side anti-click accidental).
+ *   - Conserva historico (never DELETE FROM users).
  */
 function admin_users_delete(int $id, array $body): never {
     require_csrf();
@@ -1061,14 +1094,10 @@ function admin_users_delete(int $id, array $body): never {
 
     $isSuperAdminActor = ($admin['role'] ?? '') === 'super_admin';
     if ($target['role'] === 'super_admin' && !$isSuperAdminActor) {
-        // Invisibilidad total: para admin normal, el super_admin no existe.
         err('NOT_FOUND', 'Usuario no encontrado.', 404);
     }
     if ((int)$target['id'] === (int)$admin['id']) {
         err('CONFLICT', 'No puedes desactivar tu propia cuenta.', 409);
-    }
-    if ($target['status'] === 'disabled') {
-        err('CONFLICT', 'El usuario ya esta desactivado.', 409);
     }
 
     $emailConfirmation = isset($body['email_confirmation']) ? strtolower(trim((string)$body['email_confirmation'])) : '';
@@ -1076,13 +1105,35 @@ function admin_users_delete(int $id, array $body): never {
         err('INVALID_INPUT', 'La confirmacion del email no coincide.', 400, ['field' => 'email_confirmation']);
     }
 
-    db_exec(
-        "UPDATE users SET status = 'disabled', is_active = 0 WHERE id = ?",
-        [$id]
-    );
+    // Decision: downgrade vs disable.
+    $isAdminWithCompany = ($target['role'] === 'admin' && (int)($target['company_id'] ?? 0) > 0);
+    $mode = $isAdminWithCompany ? 'downgrade' : 'disable';
 
-    // Cierre de sesiones activas del target: invalidar todos sus tokens de reset
-    // pendientes para que no pueda recuperar la cuenta tras la desactivacion.
+    if ($mode === 'downgrade') {
+        if ($target['status'] === 'disabled') {
+            // Si estaba disabled, lo dejamos como esta pero bajamos rol.
+            db_exec("UPDATE users SET role = 'consultant' WHERE id = ?", [$id]);
+        } else {
+            db_exec("UPDATE users SET role = 'consultant', status = 'active', is_active = 1 WHERE id = ?", [$id]);
+        }
+        audit_log((int)$admin['id'], 'admin_user_downgraded', [
+            'user_id' => $id,
+            'email' => $target['email'],
+            'role_from' => 'admin',
+            'role_to' => 'consultant',
+            'company_id' => $target['company_id'],
+        ]);
+        ok(['message' => 'Admin convertido en consultor. Conserva su empresa y puede seguir marcando jornada.']);
+    }
+
+    // mode === 'disable'
+    if ($target['status'] === 'disabled') {
+        err('CONFLICT', 'El usuario ya esta desactivado.', 409);
+    }
+
+    db_exec("UPDATE users SET status = 'disabled', is_active = 0 WHERE id = ?", [$id]);
+
+    // Invalidar tokens de reset pendientes para evitar recuperacion post-disable.
     db_exec(
         'UPDATE password_reset_tokens SET consumed_at = CURRENT_TIMESTAMP
           WHERE user_id = ? AND consumed_at IS NULL',
@@ -1096,7 +1147,7 @@ function admin_users_delete(int $id, array $body): never {
         'company_id' => $target['company_id'],
     ]);
 
-    // Emails: no bloqueamos la respuesta si SMTP falla; ya hicimos el soft delete.
+    // Emails: no bloqueamos la respuesta si el envio falla; ya hicimos el soft delete.
     $companyName = $target['company_name'] ?? 'Melius Services';
     $actorName = (string)($admin['name'] ?? $admin['email'] ?? 'Administrador');
 

@@ -286,17 +286,30 @@ Tres roles en `users.role`:
 
 | Rol | Permisos |
 |---|---|
-| `super_admin` | Ve todas las empresas. Crea otros admins. Acceso a dashboard global y export CSV cross-empresa. Oculto en listados visibles a admins normales. |
-| `admin` | Ve solo su empresa. Aprueba solicitudes de cambio y horas extra. Crea agentes (`consultant`) via invitacion. |
-| `consultant` | Agente regular. Hace clockin/clockout, solicita horas extra y cambios de empresa. |
+| `super_admin` | Ve todas las empresas. Crea otros admins. Promueve/degrada entre `admin` y `consultant`. Acceso a dashboard global y export CSV cross-empresa. Oculto en listados visibles a admins normales. |
+| `admin` | Ve solo su empresa. Aprueba solicitudes de cambio y horas extra. Crea consultores via invitacion. No puede cambiar rol de otros. |
+| `consultant` | Consultor regular. Hace clockin/clockout, solicita horas extra y cambios de empresa. |
 
 Flujo de primer ingreso:
 
 1. `create_super_admin.php` imprime password temporal en consola.
 2. Super_admin entra y el sistema fuerza cambio de password (banner bloqueante).
 3. Super_admin crea empresas y admins desde el panel.
-4. Admin invita agentes; cada invitacion envia un email con credenciales temporales.
-5. Agente recibe email, entra, cambia password, queda activo.
+4. Admin invita consultores; cada invitacion envia un email con credenciales temporales.
+5. Consultor recibe email, entra, cambia password, queda activo.
+
+### Acciones sobre usuarios
+
+| Accion | Quien la hace | Comportamiento |
+|---|---|---|
+| Invitar consultor | admin, super_admin | Crea cuenta con password temporal, envia email v2 con branding de la marca padre. |
+| Invitar admin | super_admin | Igual que arriba pero con `role=admin`. Requiere `company_id`. |
+| Reenviar invitacion | admin, super_admin | Regenera password temporal y manda email nuevo. Solo si `must_change_password=1`. |
+| Promover a admin | super_admin | Cambia `role: consultant -> admin`. Requiere `company_id` (sino, error). |
+| Bajar a consultor | super_admin | Cambia `role: admin -> consultant`. Conserva `company_id` y status. |
+| Eliminar / Desactivar | admin (su empresa), super_admin | Si target es `admin` con `company_id`: downgrade a `consultant` activo (conserva acceso a su empresa). Si no tiene empresa o es `consultant`: soft delete (`status=disabled`). Conserva historico. |
+
+`super_admin` nunca se promueve ni degrada via UI: se crea por script CLI (`create_super_admin.php`) y se purga por SQL directo.
 
 ---
 
