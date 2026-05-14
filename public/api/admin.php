@@ -517,6 +517,7 @@ function admin_users_list(): never {
     $rows = db_all(
         "SELECT u.id, u.email, u.name, u.role, u.company_id, u.is_active, u.status,
                 u.timezone, u.work_start_time, u.work_end_time, u.work_days_mask,
+                u.must_change_password,
                 u.created_at, c.name AS company_name
            FROM users u
            LEFT JOIN companies c ON c.id = u.company_id
@@ -532,6 +533,7 @@ function admin_users_list(): never {
         'company_name' => $r['company_name'],
         'is_active' => (int)$r['is_active'] === 1,
         'status' => $r['status'],
+        'must_change_password' => (int)($r['must_change_password'] ?? 0) === 1,
         'timezone' => $r['timezone'],
         'work_start_time' => $r['work_start_time'] !== null ? substr($r['work_start_time'], 0, 5) : null,
         'work_end_time' => $r['work_end_time'] !== null ? substr($r['work_end_time'], 0, 5) : null,
@@ -735,6 +737,91 @@ function admin_users_invite(array $body): never {
         err('SERVER_ERROR', $msg, 500);
     }
     ok(['message' => 'Invitacion enviada.', 'user_id' => $userId], 201);
+}
+
+/**
+ * POST admin/users/{id}/resend-invite — regenera password temporal y reenvia
+ * el correo de invitacion al usuario. Solo aplicable a usuarios que aun no
+ * han cambiado su password inicial (must_change_password=1).
+ *
+ * Reglas:
+ *   - super_admin invisible para admins normales.
+ *   - admin normal solo puede reenviar a usuarios de su misma empresa.
+ *   - usuario disabled: rechazado.
+ *   - usuario que ya cambio password: rechazado (no es invitacion pendiente).
+ *   - super_admin como target: bloqueado (no se invita por este flujo).
+ */
+function admin_users_resend_invite(int $id): never {
+    require_csrf();
+    $admin = require_admin();
+
+    $target = db_one(
+        'SELECT u.id, u.email, u.name, u.role, u.status, u.company_id, u.must_change_password,
+                c.name AS company_name,
+                b.name AS brand_name,
+                b.logo_url AS brand_logo_url,
+                b.primary_color AS brand_primary,
+                b.secondary_color AS brand_secondary,
+                b.welcome_intro AS brand_welcome
+           FROM users u
+           LEFT JOIN companies c ON c.id = u.company_id
+           LEFT JOIN brands b ON b.id = c.brand_id
+          WHERE u.id = ?',
+        [$id]
+    );
+    if (!$target) err('NOT_FOUND', 'Usuario no encontrado.', 404);
+
+    $isSuper = ($admin['role'] ?? '') === 'super_admin';
+    if ($target['role'] === 'super_admin') {
+        err($isSuper ? 'CONFLICT' : 'NOT_FOUND',
+            $isSuper ? 'No puedes reenviar invitacion a un super_admin.' : 'Usuario no encontrado.',
+            $isSuper ? 409 : 404);
+    }
+    if (!$isSuper && (int)$target['company_id'] !== (int)($admin['company_id'] ?? 0)) {
+        err('NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+    if ($target['status'] === 'disabled') {
+        err('CONFLICT', 'El usuario esta desactivado.', 409);
+    }
+    if ((int)$target['must_change_password'] !== 1) {
+        err('CONFLICT', 'El usuario ya activo su cuenta. No se puede reenviar la invitacion.', 409);
+    }
+
+    $tempPassword = password_temp_generate(14);
+    $hash = password_hash($tempPassword, PASSWORD_BCRYPT, ['cost' => 12]);
+    db_exec(
+        'UPDATE users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL
+          WHERE id = ?',
+        [$hash, $id]
+    );
+
+    $brandLogoUrl = !empty($target['brand_logo_url'])
+        ? absolute_asset_url((string)$target['brand_logo_url'])
+        : null;
+
+    $tpl = mail_template_invitation_v2([
+        'name' => (string)$target['name'],
+        'companyName' => (string)($target['company_name'] ?? 'Melius Services'),
+        'loginUrl' => app_base_url() . '/',
+        'email' => (string)$target['email'],
+        'tempPassword' => $tempPassword,
+        'brandName' => (string)($target['brand_name'] ?? 'Melius'),
+        'brandLogoUrl' => $brandLogoUrl,
+        'brandPrimary' => $target['brand_primary'] ?? null,
+        'brandSecondary' => $target['brand_secondary'] ?? null,
+        'brandWelcome' => $target['brand_welcome'] ?? null,
+    ]);
+    $sent = mail_send((string)$target['email'], $tpl['subject'], $tpl['html'], $tpl['text']);
+
+    if (!$sent) {
+        audit_log((int)$admin['id'], 'admin_resend_mail_failed', ['user_id' => $id, 'email' => $target['email']]);
+        err('MAIL_FAILED', 'No se pudo enviar el correo. Verifica la configuracion de envio.', 502);
+    }
+
+    audit_log((int)$admin['id'], 'admin_invite_resent', [
+        'user_id' => $id, 'email' => $target['email'], 'role' => $target['role'],
+    ]);
+    ok(['message' => 'Invitacion reenviada con nueva password temporal.']);
 }
 
 /**

@@ -66,6 +66,10 @@ if (preg_match('#^(admin/brands)/(\d+)/(logo)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
+} elseif (preg_match('#^(admin/users)/(\d+)/(resend-invite)$#', $endpoint, $m)) {
+    $endpointBase = $m[1];
+    $endpointId = (int)$m[2];
+    $endpointAction = $m[3];
 } elseif (preg_match('#^(admin/companies|admin/users|admin/brands|admin/dashboard/company)/(\d+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
@@ -82,6 +86,9 @@ try {
                 return;
             case 'PUT admin/companies/branding':
                 admin_company_branding_update($endpointId, $body);
+                return;
+            case 'POST admin/users/resend-invite':
+                admin_users_resend_invite($endpointId);
                 return;
             default:
                 err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
