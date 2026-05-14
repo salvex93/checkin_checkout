@@ -683,15 +683,33 @@
             const [newPwd, setNewPwd] = useState('');
             const [confirmPwd, setConfirmPwd] = useState('');
             const [submitting, setSubmitting] = useState(false);
+            // Admin sin empresa asignada: debe elegir empresa en este mismo paso.
+            const needsCompany = currentUser.role === 'admin' && !currentUser.company_id;
+            const [companies, setCompanies] = useState([]);
+            const [companyId, setCompanyId] = useState('');
+            const [loadingCompanies, setLoadingCompanies] = useState(false);
+
+            useEffect(() => {
+                if (!needsCompany) return;
+                setLoadingCompanies(true);
+                apiFetch('companies')
+                    .then(d => setCompanies(d.companies || []))
+                    .catch(e => toast('error', e.message))
+                    .finally(() => setLoadingCompanies(false));
+            }, [needsCompany]);
+
             const handle = async (e) => {
                 e.preventDefault();
                 if (submitting) return;
                 if (newPwd !== confirmPwd) { toast('error', 'Las contrasenas no coinciden.'); return; }
+                if (needsCompany && !companyId) { toast('error', 'Selecciona la empresa a la que perteneces.'); return; }
                 setSubmitting(true);
                 try {
-                    await apiFetch('auth/change-password', { method: 'POST', body: {
+                    const payload = {
                         current_password: currentPwd, new_password: newPwd, confirm_password: confirmPwd
-                    }});
+                    };
+                    if (needsCompany) payload.company_id = parseInt(companyId, 10);
+                    await apiFetch('auth/change-password', { method: 'POST', body: payload });
                     toast('success', 'Contrasena actualizada.');
                     onDone();
                 } catch (err) { toast('error', err.message); }
@@ -712,7 +730,23 @@
                                 className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-medium" />
                         </div>
                         <PasswordInputs newPwd={newPwd} setNewPwd={setNewPwd} confirmPwd={confirmPwd} setConfirmPwd={setConfirmPwd} />
-                        <button type="submit" disabled={submitting || newPwd !== confirmPwd}
+                        {needsCompany && (
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Empresa a la que perteneces</label>
+                                <select
+                                    required
+                                    value={companyId}
+                                    onChange={(e) => setCompanyId(e.target.value)}
+                                    disabled={loadingCompanies}
+                                    className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-bold"
+                                >
+                                    <option value="" disabled>{loadingCompanies ? 'Cargando empresas...' : 'Selecciona una empresa'}</option>
+                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                                <p className="text-[11px] text-slate-500 ml-4 mt-1">Como administrador necesitas tener una empresa asignada para gestionar a tu equipo.</p>
+                            </div>
+                        )}
+                        <button type="submit" disabled={submitting || newPwd !== confirmPwd || (needsCompany && !companyId)}
                             className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 dark:shadow-blue-900/40 disabled:opacity-60 flex items-center justify-center gap-2">
                             {submitting && <Icon name="Spinner" size={18} />}
                             Guardar nueva contrasena

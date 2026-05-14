@@ -166,7 +166,7 @@ function auth_change_password(array $body): never {
     }
     validate_password_strength($new);
 
-    $row = db_one('SELECT password_hash FROM users WHERE id = ?', [$u['id']]);
+    $row = db_one('SELECT password_hash, role, company_id FROM users WHERE id = ?', [$u['id']]);
     if (!$row || !password_verify($current, $row['password_hash'] ?? '')) {
         audit_log((int)$u['id'], 'change_password_invalid_current');
         err('INVALID_CREDENTIALS', 'La contrasena actual es incorrecta.', 401);
@@ -175,12 +175,42 @@ function auth_change_password(array $body): never {
         err('INVALID_INPUT', 'La contrasena nueva debe ser distinta a la actual.', 400, ['field' => 'new_password']);
     }
 
+    // Admin sin empresa: en el primer login debe elegir su empresa.
+    // Reglas:
+    //   - Solo para role=admin (super_admin sigue sin empresa por diseño).
+    //   - Solo si todavia NO tiene company_id asignado.
+    //   - Si el target ya tiene company_id, ignoramos el body['company_id'].
+    //   - La empresa elegida debe existir.
+    $companyToAssign = null;
+    if ($row['role'] === 'admin' && empty($row['company_id'])) {
+        if (!isset($body['company_id']) || $body['company_id'] === '' || $body['company_id'] === null) {
+            err('INVALID_INPUT', 'Debes elegir la empresa a la que perteneces.', 400, ['field' => 'company_id']);
+        }
+        $cid = validate_int($body, 'company_id', 1);
+        if (!db_one('SELECT id FROM companies WHERE id = ?', [$cid])) {
+            err('INVALID_INPUT', 'Empresa no existe.', 400, ['field' => 'company_id']);
+        }
+        $companyToAssign = $cid;
+    }
+
     $hash = password_hash($new, PASSWORD_BCRYPT, ['cost' => 12]);
-    db_exec(
-        'UPDATE users SET password_hash = ?, must_change_password = 0, password_changed_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [$hash, $u['id']]
-    );
-    audit_log((int)$u['id'], 'change_password_success');
+    if ($companyToAssign !== null) {
+        db_exec(
+            'UPDATE users SET password_hash = ?, must_change_password = 0,
+                              password_changed_at = CURRENT_TIMESTAMP, company_id = ?
+                    WHERE id = ?',
+            [$hash, $companyToAssign, $u['id']]
+        );
+        audit_log((int)$u['id'], 'change_password_success_with_company', ['company_id' => $companyToAssign]);
+    } else {
+        db_exec(
+            'UPDATE users SET password_hash = ?, must_change_password = 0,
+                              password_changed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?',
+            [$hash, $u['id']]
+        );
+        audit_log((int)$u['id'], 'change_password_success');
+    }
     ok(['message' => 'Contrasena actualizada.']);
 }
 

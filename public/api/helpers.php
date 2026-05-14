@@ -52,7 +52,10 @@ function start_session_secure(): void {
         'domain' => '',
         'secure' => $secure,           // true en HTTPS produccion
         'httponly' => true,            // JavaScript no puede leer la cookie
-        'samesite' => 'Strict'         // bloquea envio cross-site
+        // Lax: cookie viaja en navegacion top-level (clic en link de email) pero
+        // no en POST cross-site. Strict bloquea incluso el primer GET tras un link
+        // externo y rompe el login cuando el usuario llega desde un correo.
+        'samesite' => 'Lax'
     ]);
     session_start();
 }
