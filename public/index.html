@@ -496,6 +496,26 @@
             };
         };
 
+        // Persistencia ligera de navegacion entre recargas.
+        // Solo guardamos la vista raiz (dashboard|admin-panel) y la tab activa del admin.
+        // No persistimos login/loading/change-password — esos vienen del estado de sesion.
+        const NAV_STORAGE_KEY = 'melius.nav.v1';
+        const RESUMABLE_VIEWS = new Set(['dashboard', 'admin-panel']);
+        function readNavState() {
+            try {
+                const raw = localStorage.getItem(NAV_STORAGE_KEY);
+                if (!raw) return {};
+                const obj = JSON.parse(raw);
+                return obj && typeof obj === 'object' ? obj : {};
+            } catch (_) { return {}; }
+        }
+        function writeNavState(patch) {
+            try {
+                const next = { ...readNavState(), ...patch };
+                localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(next));
+            } catch (_) {}
+        }
+
         const App = () => {
             const { push: toast } = useToast();
             // loading | login | forgot-password | reset-password | change-password | dashboard | admin-panel
@@ -513,6 +533,12 @@
                 if (tourKey) markTourSeen(tourKey);
                 setTourKey(null);
             }, [tourKey]);
+
+            // Persistir vista raiz para que al recargar caigas en el mismo sitio.
+            useEffect(() => {
+                if (RESUMABLE_VIEWS.has(view)) writeNavState({ view });
+                else if (view === 'login') writeNavState({ view: null });
+            }, [view]);
 
             // Auto-arrancar tour al entrar a dashboard/admin la primera vez.
             useEffect(() => {
@@ -555,7 +581,11 @@
                             if (me.user.must_change_password) {
                                 setView('change-password');
                             } else {
-                                setView('dashboard');
+                                const saved = readNavState().view;
+                                const canResumeAdmin = me.user.role === 'admin' || me.user.role === 'super_admin';
+                                if (saved === 'admin-panel' && canResumeAdmin) setView('admin-panel');
+                                else if (saved === 'dashboard') setView('dashboard');
+                                else setView('dashboard');
                             }
                         } catch (e) {
                             if (e._auth) setView('login'); else { toast('error', e.message); setView('login'); }
@@ -1373,9 +1403,19 @@
                 ...(isSuper ? [{ id: 'tenant', label: 'Configuracion', icon: 'Lock' }] : []),
             ];
 
-            const [activeTab, setActiveTab] = useState('dashboard');
+            const [activeTab, setActiveTab] = useState(() => {
+                const allowed = new Set(['dashboard','records','agents','requests', ...(isSuper ? ['brands','tenant'] : []), 'companies','admins']);
+                const saved = readNavState().adminTab;
+                return saved && allowed.has(saved) ? saved : 'dashboard';
+            });
             // Subtab del bucket "requests" agrupado: cambios u extras.
-            const [requestsSub, setRequestsSub] = useState('changes');
+            const [requestsSub, setRequestsSub] = useState(() => {
+                const saved = readNavState().requestsSub;
+                return saved === 'overtime' ? 'overtime' : 'changes';
+            });
+
+            useEffect(() => { writeNavState({ adminTab: activeTab }); }, [activeTab]);
+            useEffect(() => { writeNavState({ requestsSub }); }, [requestsSub]);
             const [counts, setCounts] = useState({ changes: 0, overtime: 0 });
             const [moreOpen, setMoreOpen] = useState(false);
             const [userMenuOpen, setUserMenuOpen] = useState(false);
