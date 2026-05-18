@@ -186,6 +186,21 @@ CREATE TABLE IF NOT EXISTS audit_log (
     INDEX idx_audit_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS email_templates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    brand_id INT NOT NULL,
+    kind ENUM('invitation','password_reset','admin_disabled','admin_delete_receipt') NOT NULL,
+    subject VARCHAR(200) NOT NULL,
+    intro_html TEXT NOT NULL,
+    cta_label VARCHAR(80) NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by INT NULL,
+    UNIQUE KEY uq_brand_kind (brand_id, kind),
+    INDEX idx_etpl_brand (brand_id),
+    CONSTRAINT fk_etpl_brand FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+    CONSTRAINT fk_etpl_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Seed marcas paraguas

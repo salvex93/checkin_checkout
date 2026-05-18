@@ -192,6 +192,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_user_event ON audit_log(user_id, event);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 
+CREATE TABLE IF NOT EXISTS email_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('invitation','password_reset','admin_disabled','admin_delete_receipt')),
+    subject TEXT NOT NULL,
+    intro_html TEXT NOT NULL,
+    cta_label TEXT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_by INTEGER NULL,
+    UNIQUE (brand_id, kind),
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_etpl_brand ON email_templates(brand_id);
+
 -- Seed marcas paraguas
 INSERT OR IGNORE INTO brands (slug, name, logo_url, primary_color, secondary_color) VALUES
     ('melius',  'Melius Services',  '/assets/brands/melius.webp',  '#07d6da', '#9909fe'),

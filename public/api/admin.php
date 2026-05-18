@@ -669,6 +669,7 @@ function admin_users_create_invited(string $email, string $name, string $role, ?
     $companyRow = $companyId
         ? db_one(
             'SELECT c.name AS company_name,
+                    b.id AS brand_id,
                     b.name AS brand_name,
                     b.logo_url AS brand_logo_url,
                     b.primary_color AS brand_primary,
@@ -684,6 +685,8 @@ function admin_users_create_invited(string $email, string $name, string $role, ?
     $brandLogoUrl = !empty($companyRow['brand_logo_url'])
         ? absolute_asset_url($companyRow['brand_logo_url'])
         : null;
+    $brandId = isset($companyRow['brand_id']) ? (int)$companyRow['brand_id'] : null;
+    $override = email_template_load($brandId, 'invitation');
     $tpl = mail_template_invitation_v2([
         'name' => $name,
         'companyName' => $companyName,
@@ -695,6 +698,9 @@ function admin_users_create_invited(string $email, string $name, string $role, ?
         'brandPrimary' => $companyRow['brand_primary'] ?? null,
         'brandSecondary' => $companyRow['brand_secondary'] ?? null,
         'brandWelcome' => $companyRow['brand_welcome'] ?? null,
+        'subjectOverride' => $override['subject'] ?? null,
+        'introOverride' => $override['intro_html'] ?? null,
+        'ctaOverride' => $override['cta_label'] ?? null,
     ]);
     $sent = mail_send($email, $tpl['subject'], $tpl['html'], $tpl['text']);
 
@@ -788,6 +794,7 @@ function admin_users_resend_invite(int $id): never {
     $target = db_one(
         'SELECT u.id, u.email, u.name, u.role, u.status, u.company_id, u.must_change_password,
                 c.name AS company_name,
+                b.id AS brand_id,
                 b.name AS brand_name,
                 b.logo_url AS brand_logo_url,
                 b.primary_color AS brand_primary,
@@ -829,6 +836,8 @@ function admin_users_resend_invite(int $id): never {
         ? absolute_asset_url((string)$target['brand_logo_url'])
         : null;
 
+    $brandIdResend = isset($target['brand_id']) ? (int)$target['brand_id'] : null;
+    $overrideResend = email_template_load($brandIdResend, 'invitation');
     $tpl = mail_template_invitation_v2([
         'name' => (string)$target['name'],
         'companyName' => (string)($target['company_name'] ?? 'Melius Services'),
@@ -840,6 +849,9 @@ function admin_users_resend_invite(int $id): never {
         'brandPrimary' => $target['brand_primary'] ?? null,
         'brandSecondary' => $target['brand_secondary'] ?? null,
         'brandWelcome' => $target['brand_welcome'] ?? null,
+        'subjectOverride' => $overrideResend['subject'] ?? null,
+        'introOverride' => $overrideResend['intro_html'] ?? null,
+        'ctaOverride' => $overrideResend['cta_label'] ?? null,
     ]);
     $sent = mail_send((string)$target['email'], $tpl['subject'], $tpl['html'], $tpl['text']);
 
@@ -1084,9 +1096,11 @@ function admin_users_delete(int $id, array $body): never {
     $admin = require_admin();
 
     $target = db_one(
-        'SELECT u.id, u.email, u.name, u.role, u.status, u.company_id, c.name AS company_name
+        'SELECT u.id, u.email, u.name, u.role, u.status, u.company_id, c.name AS company_name,
+                b.id AS brand_id, b.name AS brand_name
            FROM users u
            LEFT JOIN companies c ON c.id = u.company_id
+           LEFT JOIN brands b ON b.id = c.brand_id
           WHERE u.id = ?',
         [$id]
     );
@@ -1150,17 +1164,215 @@ function admin_users_delete(int $id, array $body): never {
     // Emails: no bloqueamos la respuesta si el envio falla; ya hicimos el soft delete.
     $companyName = $target['company_name'] ?? 'Melius Services';
     $actorName = (string)($admin['name'] ?? $admin['email'] ?? 'Administrador');
+    $brandIdDel = isset($target['brand_id']) ? (int)$target['brand_id'] : null;
+    $brandNameDel = (string)($target['brand_name'] ?? 'Melius');
+    $overrideDisabled = email_template_load($brandIdDel, 'admin_disabled');
+    $overrideReceipt = email_template_load($brandIdDel, 'admin_delete_receipt');
 
-    $tplTarget = mail_template_admin_disabled((string)$target['name'], $companyName, $actorName);
+    $tplTarget = mail_template_admin_disabled((string)$target['name'], $companyName, $actorName, [
+        'brandName' => $brandNameDel,
+        'subjectOverride' => $overrideDisabled['subject'] ?? null,
+        'introOverride' => $overrideDisabled['intro_html'] ?? null,
+    ]);
     @mail_send((string)$target['email'], $tplTarget['subject'], $tplTarget['html'], $tplTarget['text']);
 
     $tplActor = mail_template_admin_delete_receipt(
         $actorName,
         (string)$target['name'],
         (string)$target['email'],
-        $companyName
+        $companyName,
+        [
+            'brandName' => $brandNameDel,
+            'subjectOverride' => $overrideReceipt['subject'] ?? null,
+            'introOverride' => $overrideReceipt['intro_html'] ?? null,
+        ]
     );
     @mail_send((string)$admin['email'], $tplActor['subject'], $tplActor['html'], $tplActor['text']);
 
     ok(['message' => 'Usuario desactivado.']);
+}
+
+// =====================================================================
+// Email templates — CRUD para super_admin. Permite editar subject, intro y
+// cta_label por (brand_id, kind). El HTML del layout (hero, footer, colores)
+// permanece blindado en mailer.php para mantener compatibilidad Gmail/Outlook.
+// =====================================================================
+
+const EMAIL_TEMPLATE_KINDS = ['invitation', 'password_reset', 'admin_disabled', 'admin_delete_receipt'];
+
+/**
+ * Verifica que kind sea valido y termina con err si no.
+ */
+function email_template_validate_kind(string $kind): void {
+    if (!in_array($kind, EMAIL_TEMPLATE_KINDS, true)) {
+        err('INVALID_INPUT', 'Tipo de plantilla invalido.', 400, ['field' => 'kind']);
+    }
+}
+
+/**
+ * GET admin/email-templates — lista todas las plantillas (brands x kinds).
+ */
+function admin_email_templates_list(): never {
+    require_super_admin();
+    $rows = db_all(
+        'SELECT et.id, et.brand_id, b.slug AS brand_slug, b.name AS brand_name,
+                et.kind, et.subject, et.intro_html, et.cta_label, et.updated_at
+           FROM email_templates et
+           JOIN brands b ON b.id = et.brand_id
+          ORDER BY b.name, et.kind'
+    );
+    ok(['templates' => $rows]);
+}
+
+/**
+ * GET admin/email-templates/{brandId}/{kind} — detalle.
+ */
+function admin_email_templates_get(int $brandId, string $kind): never {
+    require_super_admin();
+    email_template_validate_kind($kind);
+    $row = db_one(
+        'SELECT et.id, et.brand_id, b.slug AS brand_slug, b.name AS brand_name,
+                et.kind, et.subject, et.intro_html, et.cta_label, et.updated_at
+           FROM email_templates et
+           JOIN brands b ON b.id = et.brand_id
+          WHERE et.brand_id = ? AND et.kind = ?',
+        [$brandId, $kind]
+    );
+    if (!$row) err('NOT_FOUND', 'Plantilla no encontrada.', 404);
+    ok(['template' => $row]);
+}
+
+/**
+ * PUT admin/email-templates/{brandId}/{kind} — upsert.
+ * Body: { subject, intro_html, cta_label? }
+ */
+function admin_email_templates_save(int $brandId, string $kind, array $body): never {
+    require_csrf();
+    $admin = require_super_admin();
+    email_template_validate_kind($kind);
+
+    if (!db_one('SELECT id FROM brands WHERE id = ?', [$brandId])) {
+        err('NOT_FOUND', 'Marca no encontrada.', 404);
+    }
+
+    $subject = validate_string($body, 'subject', 3, 200);
+    $intro = validate_string($body, 'intro_html', 3, 4000);
+    $cta = null;
+    if (array_key_exists('cta_label', $body) && $body['cta_label'] !== null && $body['cta_label'] !== '') {
+        $cta = validate_string($body, 'cta_label', 1, 80);
+    }
+
+    $existing = db_one('SELECT id FROM email_templates WHERE brand_id = ? AND kind = ?', [$brandId, $kind]);
+    if ($existing) {
+        db_exec(
+            'UPDATE email_templates SET subject = ?, intro_html = ?, cta_label = ?, updated_by = ? WHERE id = ?',
+            [$subject, $intro, $cta, (int)$admin['id'], (int)$existing['id']]
+        );
+    } else {
+        db_exec(
+            'INSERT INTO email_templates (brand_id, kind, subject, intro_html, cta_label, updated_by)
+                  VALUES (?, ?, ?, ?, ?, ?)',
+            [$brandId, $kind, $subject, $intro, $cta, (int)$admin['id']]
+        );
+    }
+    audit_log((int)$admin['id'], 'email_template_save', ['brand_id' => $brandId, 'kind' => $kind]);
+    ok(['message' => 'Plantilla guardada.']);
+}
+
+/**
+ * DELETE admin/email-templates/{brandId}/{kind} — borra override.
+ * El sistema vuelve a usar el copy hardcoded de mailer.php.
+ */
+function admin_email_templates_reset(int $brandId, string $kind): never {
+    require_csrf();
+    $admin = require_super_admin();
+    email_template_validate_kind($kind);
+    db_exec('DELETE FROM email_templates WHERE brand_id = ? AND kind = ?', [$brandId, $kind]);
+    audit_log((int)$admin['id'], 'email_template_reset', ['brand_id' => $brandId, 'kind' => $kind]);
+    ok(['message' => 'Plantilla restablecida al default.']);
+}
+
+/**
+ * POST admin/email-templates/preview — renderiza una plantilla con datos
+ * demo sin tocar la DB ni enviar correo. Body: { kind, brand_id?, subject?,
+ * intro_html?, cta_label? }. Si los overrides vienen en el body, se usan;
+ * si no, se carga la fila de DB.
+ */
+function admin_email_templates_preview(array $body): never {
+    require_csrf();
+    require_super_admin();
+    $kind = validate_string($body, 'kind', 1, 40);
+    email_template_validate_kind($kind);
+
+    $brandId = isset($body['brand_id']) && $body['brand_id'] !== '' && $body['brand_id'] !== null
+        ? validate_int($body, 'brand_id', 1)
+        : null;
+    $brand = $brandId
+        ? db_one('SELECT id, name, logo_url, primary_color, secondary_color, welcome_intro FROM brands WHERE id = ?', [$brandId])
+        : null;
+
+    $subjectOverride = isset($body['subject']) && $body['subject'] !== '' ? (string)$body['subject'] : null;
+    $introOverride = isset($body['intro_html']) && $body['intro_html'] !== '' ? (string)$body['intro_html'] : null;
+    $ctaOverride = isset($body['cta_label']) && $body['cta_label'] !== '' ? (string)$body['cta_label'] : null;
+
+    if ($brandId && !$subjectOverride && !$introOverride && !$ctaOverride) {
+        $row = email_template_load($brandId, $kind);
+        if ($row) {
+            $subjectOverride = $row['subject'];
+            $introOverride = $row['intro_html'];
+            $ctaOverride = $row['cta_label'];
+        }
+    }
+
+    $brandName = $brand['name'] ?? 'Melius';
+    $brandPrimary = $brand['primary_color'] ?? '#07d6da';
+    $brandSecondary = $brand['secondary_color'] ?? '#9909fe';
+    $brandLogo = $brand && !empty($brand['logo_url']) ? absolute_asset_url((string)$brand['logo_url']) : null;
+    $loginUrl = app_base_url() . '/';
+
+    switch ($kind) {
+        case 'invitation':
+            $tpl = mail_template_invitation_v2([
+                'name' => 'Ana Gomez',
+                'companyName' => 'Empresa Demo',
+                'loginUrl' => $loginUrl,
+                'email' => 'ana@empresa.com',
+                'tempPassword' => 'Demo%2026!',
+                'brandName' => $brandName,
+                'brandLogoUrl' => $brandLogo,
+                'brandPrimary' => $brandPrimary,
+                'brandSecondary' => $brandSecondary,
+                'brandWelcome' => null,
+                'introOverride' => $introOverride,
+                'subjectOverride' => $subjectOverride,
+                'ctaOverride' => $ctaOverride,
+            ]);
+            break;
+        case 'password_reset':
+            $tpl = mail_template_password_reset('Ana Gomez', $loginUrl . '#reset?token=demo', 2, [
+                'brandName' => $brandName,
+                'subjectOverride' => $subjectOverride,
+                'introOverride' => $introOverride,
+                'ctaOverride' => $ctaOverride,
+            ]);
+            break;
+        case 'admin_disabled':
+            $tpl = mail_template_admin_disabled('Ana Gomez', 'Empresa Demo', 'Admin Demo', [
+                'brandName' => $brandName,
+                'subjectOverride' => $subjectOverride,
+                'introOverride' => $introOverride,
+            ]);
+            break;
+        case 'admin_delete_receipt':
+            $tpl = mail_template_admin_delete_receipt('Admin Demo', 'Ana Gomez', 'ana@empresa.com', 'Empresa Demo', [
+                'brandName' => $brandName,
+                'subjectOverride' => $subjectOverride,
+                'introOverride' => $introOverride,
+            ]);
+            break;
+        default:
+            err('INVALID_INPUT', 'Tipo de plantilla invalido.', 400);
+    }
+
+    ok(['subject' => $tpl['subject'], 'html' => $tpl['html'], 'text' => $tpl['text']]);
 }

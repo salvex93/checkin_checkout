@@ -228,7 +228,14 @@ function auth_forgot_password(array $body): never {
     rate_limit_or_block('forgot_email', $email, 3, 900);
     rate_limit_or_block('forgot_ip', client_ip(), 10, 900);
 
-    $user = db_one('SELECT id, name, status, is_active FROM users WHERE email = ?', [$email]);
+    $user = db_one(
+        'SELECT u.id, u.name, u.status, u.is_active, b.id AS brand_id, b.name AS brand_name
+           FROM users u
+           LEFT JOIN companies c ON c.id = u.company_id
+           LEFT JOIN brands b ON b.id = c.brand_id
+          WHERE u.email = ?',
+        [$email]
+    );
     if ($user && (int)$user['is_active'] === 1 && ($user['status'] ?? '') === 'active') {
         $plain = bin2hex(random_bytes(32));
         $hash = hash('sha256', $plain);
@@ -240,7 +247,14 @@ function auth_forgot_password(array $body): never {
         );
 
         $resetUrl = app_base_url() . '/?reset_token=' . urlencode($plain);
-        $tpl = mail_template_password_reset($user['name'], $resetUrl, PASSWORD_RESET_TTL_HOURS);
+        $brandId = isset($user['brand_id']) ? (int)$user['brand_id'] : null;
+        $override = email_template_load($brandId, 'password_reset');
+        $tpl = mail_template_password_reset($user['name'], $resetUrl, PASSWORD_RESET_TTL_HOURS, [
+            'brandName' => $user['brand_name'] ?? 'Melius',
+            'subjectOverride' => $override['subject'] ?? null,
+            'introOverride' => $override['intro_html'] ?? null,
+            'ctaOverride' => $override['cta_label'] ?? null,
+        ]);
         $sent = mail_send($email, $tpl['subject'], $tpl['html'], $tpl['text']);
         audit_log((int)$user['id'], $sent ? 'forgot_password_sent' : 'forgot_password_mail_failed');
     } else {

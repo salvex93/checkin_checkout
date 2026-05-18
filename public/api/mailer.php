@@ -148,6 +148,51 @@ function mail_send_smtp(string $to, string $subject, string $html, string $text)
 }
 
 // =====================================================================
+// Loader de overrides editables (email_templates). Si no existe override
+// para (brand_id, kind), retorna null y el caller usa el copy hardcoded.
+// =====================================================================
+
+/**
+ * Carga override desde DB. Retorna null si no hay fila o falla la consulta
+ * (defensivo: nunca rompe el envio aunque la tabla no exista todavia).
+ */
+function email_template_load(?int $brandId, string $kind): ?array {
+    if ($brandId === null) return null;
+    $allowed = ['invitation', 'password_reset', 'admin_disabled', 'admin_delete_receipt'];
+    if (!in_array($kind, $allowed, true)) return null;
+    try {
+        return db_one(
+            'SELECT subject, intro_html, cta_label FROM email_templates WHERE brand_id = ? AND kind = ?',
+            [$brandId, $kind]
+        ) ?: null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * Reemplaza placeholders {{key}} por valores. Cuando $forHtml=true, escapa
+ * TODO el template (incluyendo cualquier HTML literal del usuario) antes
+ * de inyectar valores, que se escapan a su vez. En modo texto plano usa
+ * los valores crudos. Esto previene XSS desde overrides de DB.
+ */
+function email_template_render(string $tpl, array $vars, bool $forHtml = true): string {
+    if ($forHtml) {
+        $escaped = htmlspecialchars($tpl, ENT_QUOTES, 'UTF-8');
+        return preg_replace_callback('/\{\{\s*([a-z_]+)\s*\}\}/', function ($m) use ($vars) {
+            $key = $m[1];
+            if (!array_key_exists($key, $vars)) return $m[0];
+            return htmlspecialchars((string)$vars[$key], ENT_QUOTES, 'UTF-8');
+        }, $escaped);
+    }
+    return preg_replace_callback('/\{\{\s*([a-z_]+)\s*\}\}/', function ($m) use ($vars) {
+        $key = $m[1];
+        if (!array_key_exists($key, $vars)) return $m[0];
+        return (string)$vars[$key];
+    }, $tpl);
+}
+
+// =====================================================================
 // Templates de correo. HTML minimo accesible + version texto plano.
 // =====================================================================
 
@@ -215,28 +260,48 @@ HTML;
 
 /**
  * Plantilla: enlace de reset de password (flujo forgot-password).
+ * Acepta overrides opcionales (subjectOverride, introOverride, ctaOverride,
+ * brandName) cuando se invoca como mail_template_password_reset_ex.
  */
-function mail_template_password_reset(string $name, string $resetUrl, int $hours): array {
+function mail_template_password_reset(string $name, string $resetUrl, int $hours, array $overrides = []): array {
+    $brandName = (string)($overrides['brandName'] ?? 'Melius');
+    $subjectOverride = $overrides['subjectOverride'] ?? null;
+    $introOverride = $overrides['introOverride'] ?? null;
+    $ctaOverride = $overrides['ctaOverride'] ?? null;
+
     $nameSafe = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
     $urlSafe = htmlspecialchars($resetUrl, ENT_QUOTES, 'UTF-8');
+    $brandNameSafe = htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8');
     $hoursSafe = (int)$hours;
+
+    $vars = ['name' => $name, 'brand_name' => $brandName, 'reset_url' => $resetUrl, 'hours' => (string)$hoursSafe];
+    $introHtml = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? nl2br(email_template_render((string)$introOverride, $vars, true))
+        : "Recibimos una solicitud para restablecer tu contrasena en {$brandNameSafe} Clockin. Si no fuiste tu, ignora este correo.";
+    $ctaLabel = $ctaOverride !== null && trim((string)$ctaOverride) !== ''
+        ? email_template_render((string)$ctaOverride, $vars, true)
+        : 'Restablecer contrasena';
 
     $body = <<<HTML
 <p>Hola {$nameSafe},</p>
-<p>Recibimos una solicitud para restablecer tu contrasena en Melius Clockin. Si no fuiste tu, ignora este correo.</p>
-<p><a href="{$urlSafe}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Restablecer contrasena</a></p>
+<p>{$introHtml}</p>
+<p><a href="{$urlSafe}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">{$ctaLabel}</a></p>
 <p style="color:#6b7280;font-size:13px;">El enlace expira en {$hoursSafe} horas y solo puede usarse una vez.</p>
 <p style="color:#6b7280;font-size:13px;">Si el boton no funciona, copia y pega en tu navegador:<br>{$urlSafe}</p>
 HTML;
 
-    $text = "Hola {$name},\n\n"
-        . "Recibimos una solicitud para restablecer tu contrasena en Melius Clockin.\n"
-        . "Si no fuiste tu, ignora este correo.\n\n"
-        . "Enlace de reset (expira en {$hoursSafe} horas): {$resetUrl}\n";
+    $textIntro = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? email_template_render((string)$introOverride, $vars, false)
+        : "Recibimos una solicitud para restablecer tu contrasena en {$brandName} Clockin.\nSi no fuiste tu, ignora este correo.";
+    $text = "Hola {$name},\n\n{$textIntro}\n\nEnlace de reset (expira en {$hoursSafe} horas): {$resetUrl}\n";
+
+    $subject = $subjectOverride !== null && trim((string)$subjectOverride) !== ''
+        ? email_template_render((string)$subjectOverride, $vars, false)
+        : "Restablecer contrasena - {$brandName} Clockin";
 
     return [
-        'subject' => 'Restablecer contrasena - Melius Clockin',
-        'html' => tpl_layout('Restablecer contrasena', $body),
+        'subject' => $subject,
+        'html' => tpl_layout($subject, $body),
         'text' => $text,
     ];
 }
@@ -297,6 +362,8 @@ function mail_template_invitation_v2(array $opts): array {
     $email = isset($opts['email']) ? (string)$opts['email'] : null;
     $tempPassword = isset($opts['tempPassword']) ? (string)$opts['tempPassword'] : null;
     $intro = isset($opts['introOverride']) ? (string)$opts['introOverride'] : null;
+    $subjectOverride = isset($opts['subjectOverride']) ? (string)$opts['subjectOverride'] : null;
+    $ctaOverride = isset($opts['ctaOverride']) ? (string)$opts['ctaOverride'] : null;
 
     // Defaults Melius si la marca no viene.
     $brandName = (string)($opts['brandName'] ?? 'Melius');
@@ -319,8 +386,14 @@ function mail_template_invitation_v2(array $opts): array {
     //   1) introOverride explicito (tests/demos)
     //   2) welcome_intro de la marca
     //   3) fallback automatico con nombre de empresa y marca
+    $introVars = [
+        'name' => $name,
+        'company' => $company,
+        'brand_name' => $brandName,
+        'email' => $email ?? '',
+    ];
     if ($intro !== null) {
-        $introHtml = htmlspecialchars($intro, ENT_QUOTES, 'UTF-8');
+        $introHtml = nl2br(email_template_render($intro, $introVars, true));
     } elseif ($brandWelcome !== null && trim($brandWelcome) !== '') {
         // welcome_intro guardado en DB ya viene como texto plano. Lo escapamos para
         // evitar inyeccion HTML/JS, y permitimos solo saltos de linea como <br>.
@@ -380,12 +453,16 @@ HTML;
 </table>
 HTML;
 
-    // CTA con color de marca.
+    // CTA con color de marca. Label personalizable por override.
+    $ctaVars = ['brand_name' => $brandName, 'company' => $company, 'name' => $name];
+    $ctaLabel = $ctaOverride !== null && trim($ctaOverride) !== ''
+        ? email_template_render($ctaOverride, $ctaVars, true)
+        : "Entrar a {$brandNameSafe} Clockin";
     $cta = <<<HTML
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:20px auto 8px auto;">
   <tr><td align="center" bgcolor="{$primarySafe}" style="border-radius:10px;">
     <a href="{$urlSafe}" style="display:inline-block;padding:14px 28px;font-family:Segoe UI,Arial,sans-serif;font-size:14px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px;background:{$primarySafe};">
-      Entrar a {$brandNameSafe} Clockin
+      {$ctaLabel}
     </a>
   </td></tr>
 </table>
@@ -422,7 +499,7 @@ HTML;
 HTML;
 
     $textIntro = $intro !== null
-        ? $intro
+        ? email_template_render($intro, $introVars, false)
         : ($brandWelcome !== null && trim($brandWelcome) !== ''
             ? $brandWelcome
             : "Tu equipo en {$company} esta usando {$brandName} Clockin para marcar jornada.");
@@ -442,8 +519,13 @@ HTML;
     }
     $textParts[] = "Inicia sesion en: {$loginUrl}";
 
+    $subjectVars = ['brand_name' => $brandName, 'company' => $company, 'name' => $name];
+    $subject = $subjectOverride !== null && trim($subjectOverride) !== ''
+        ? email_template_render($subjectOverride, $subjectVars, false)
+        : "Bienvenido a {$brandName} Clockin · {$company}";
+
     return [
-        'subject' => "Bienvenido a {$brandName} Clockin · {$company}",
+        'subject' => $subject,
         'html' => $html,
         'text' => implode("\n", $textParts),
     ];
@@ -453,26 +535,40 @@ HTML;
  * Aviso al admin afectado tras desactivacion (soft delete) por otro admin.
  * No contiene credenciales. Si el admin considera que es un error, contacta soporte.
  */
-function mail_template_admin_disabled(string $name, string $companyName, string $actorName): array {
+function mail_template_admin_disabled(string $name, string $companyName, string $actorName, array $overrides = []): array {
+    $brandName = (string)($overrides['brandName'] ?? 'Melius');
+    $subjectOverride = $overrides['subjectOverride'] ?? null;
+    $introOverride = $overrides['introOverride'] ?? null;
+
     $nameSafe = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
     $companySafe = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
     $actorSafe = htmlspecialchars($actorName, ENT_QUOTES, 'UTF-8');
+    $brandNameSafe = htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8');
     $supportSafe = htmlspecialchars(SUPPORT_EMAIL, ENT_QUOTES, 'UTF-8');
+
+    $vars = ['name' => $name, 'company' => $companyName, 'actor_name' => $actorName, 'brand_name' => $brandName];
+
+    $introHtml = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? nl2br(email_template_render((string)$introOverride, $vars, true))
+        : "Tu cuenta de administrador en <strong>{$brandNameSafe} Clockin</strong> ({$companySafe}) fue desactivada por <strong>{$actorSafe}</strong>. A partir de este momento no podras iniciar sesion. Tus registros historicos se conservan.";
 
     $body = <<<HTML
 <p style="margin:0 0 12px 0;">Hola <strong>{$nameSafe}</strong>,</p>
-<p style="margin:0 0 12px 0;">Tu cuenta de administrador en <strong>Melius Clockin</strong> ({$companySafe}) fue desactivada por <strong>{$actorSafe}</strong>.</p>
-<p style="margin:0 0 12px 0;">A partir de este momento no podras iniciar sesion. Tus registros historicos se conservan.</p>
+<p style="margin:0 0 12px 0;">{$introHtml}</p>
 <p style="margin:0 0 12px 0;">Si crees que es un error, responde este correo o escribe a <a href="mailto:{$supportSafe}" style="color:#2563eb;text-decoration:none;">{$supportSafe}</a>.</p>
 HTML;
 
-    $text = "Hola {$name},\n\n"
-        . "Tu cuenta de administrador en Melius Clockin ({$companyName}) fue desactivada por {$actorName}.\n"
-        . "A partir de este momento no podras iniciar sesion. Tus registros historicos se conservan.\n\n"
-        . "Si crees que es un error, responde este correo o escribe a " . SUPPORT_EMAIL . ".";
+    $textIntro = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? email_template_render((string)$introOverride, $vars, false)
+        : "Tu cuenta de administrador en {$brandName} Clockin ({$companyName}) fue desactivada por {$actorName}.\nA partir de este momento no podras iniciar sesion. Tus registros historicos se conservan.";
+    $text = "Hola {$name},\n\n{$textIntro}\n\nSi crees que es un error, responde este correo o escribe a " . SUPPORT_EMAIL . ".";
+
+    $subject = $subjectOverride !== null && trim((string)$subjectOverride) !== ''
+        ? email_template_render((string)$subjectOverride, $vars, false)
+        : "Tu cuenta de administrador fue desactivada · {$brandName} Clockin";
 
     return [
-        'subject' => "Tu cuenta de administrador fue desactivada · Melius Clockin",
+        'subject' => $subject,
         'html' => tpl_layout('Cuenta desactivada', $body),
         'text' => $text,
     ];
@@ -481,16 +577,31 @@ HTML;
 /**
  * Recibo al admin que ejecuto la desactivacion. Confirmacion + traza para el actor.
  */
-function mail_template_admin_delete_receipt(string $actorName, string $targetName, string $targetEmail, string $companyName): array {
+function mail_template_admin_delete_receipt(string $actorName, string $targetName, string $targetEmail, string $companyName, array $overrides = []): array {
+    $brandName = (string)($overrides['brandName'] ?? 'Melius');
+    $subjectOverride = $overrides['subjectOverride'] ?? null;
+    $introOverride = $overrides['introOverride'] ?? null;
+
     $actorSafe = htmlspecialchars($actorName, ENT_QUOTES, 'UTF-8');
     $targetNameSafe = htmlspecialchars($targetName, ENT_QUOTES, 'UTF-8');
     $targetEmailSafe = htmlspecialchars($targetEmail, ENT_QUOTES, 'UTF-8');
     $companySafe = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
     $whenSafe = htmlspecialchars(date('Y-m-d H:i:s'), ENT_QUOTES, 'UTF-8');
 
+    $vars = [
+        'actor_name' => $actorName,
+        'target_name' => $targetName,
+        'target_email' => $targetEmail,
+        'company' => $companyName,
+        'brand_name' => $brandName,
+    ];
+    $introHtml = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? nl2br(email_template_render((string)$introOverride, $vars, true))
+        : 'Confirmamos que desactivaste la siguiente cuenta de administrador:';
+
     $body = <<<HTML
 <p style="margin:0 0 12px 0;">Hola <strong>{$actorSafe}</strong>,</p>
-<p style="margin:0 0 12px 0;">Confirmamos que desactivaste la siguiente cuenta de administrador:</p>
+<p style="margin:0 0 12px 0;">{$introHtml}</p>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0 16px 0;border-collapse:collapse;">
   <tr><td style="padding:6px 0;font-size:13px;color:#475569;width:130px;">Nombre</td><td style="padding:6px 0;font-size:13px;color:#0f172a;"><strong>{$targetNameSafe}</strong></td></tr>
   <tr><td style="padding:6px 0;font-size:13px;color:#475569;">Correo</td><td style="padding:6px 0;font-size:13px;color:#0f172a;">{$targetEmailSafe}</td></tr>
@@ -500,16 +611,22 @@ function mail_template_admin_delete_receipt(string $actorName, string $targetNam
 <p style="margin:0 0 12px 0;font-size:13px;color:#475569;">La desactivacion es reversible desde el panel admin (cambiar status a active). Los registros historicos del usuario se conservan.</p>
 HTML;
 
-    $text = "Hola {$actorName},\n\n"
-        . "Confirmamos que desactivaste la siguiente cuenta de administrador:\n\n"
+    $textIntro = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? email_template_render((string)$introOverride, $vars, false)
+        : 'Confirmamos que desactivaste la siguiente cuenta de administrador:';
+    $text = "Hola {$actorName},\n\n{$textIntro}\n\n"
         . "  Nombre:  {$targetName}\n"
         . "  Correo:  {$targetEmail}\n"
         . "  Empresa: {$companyName}\n"
         . "  Fecha:   {$whenSafe}\n\n"
         . "La desactivacion es reversible desde el panel admin (status active). Los registros se conservan.";
 
+    $subject = $subjectOverride !== null && trim((string)$subjectOverride) !== ''
+        ? email_template_render((string)$subjectOverride, $vars, false)
+        : "Confirmacion: desactivaste a {$targetEmail} · {$brandName} Clockin";
+
     return [
-        'subject' => "Confirmacion: desactivaste a {$targetEmail} · Melius Clockin",
+        'subject' => $subject,
         'html' => tpl_layout('Recibo de desactivacion', $body),
         'text' => $text,
     ];

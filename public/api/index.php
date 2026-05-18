@@ -58,7 +58,14 @@ $body = in_array($method, ['POST', 'PUT', 'DELETE'], true) ? read_json_body() : 
 $endpointBase = $endpoint;
 $endpointId = null;
 $endpointAction = null;
-if (preg_match('#^(admin/brands)/(\d+)/(logo)$#', $endpoint, $m)) {
+// Caso especial: admin/email-templates/{brandId}/{kind} — 2 segmentos extra.
+$emailTplBrandId = null;
+$emailTplKind = null;
+if (preg_match('#^admin/email-templates/(\d+)/([a-z_]+)$#', $endpoint, $m)) {
+    $endpointBase = 'admin/email-templates';
+    $emailTplBrandId = (int)$m[1];
+    $emailTplKind = $m[2];
+} elseif (preg_match('#^(admin/brands)/(\d+)/(logo)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
@@ -77,6 +84,23 @@ if (preg_match('#^(admin/brands)/(\d+)/(logo)$#', $endpoint, $m)) {
 
 // === Dispatcher ===
 try {
+    // Rutas de email-templates con dos segmentos (brandId + kind).
+    if ($endpointBase === 'admin/email-templates' && $emailTplBrandId !== null && $emailTplKind !== null) {
+        switch ($method) {
+            case 'GET':
+                admin_email_templates_get($emailTplBrandId, $emailTplKind);
+                return;
+            case 'PUT':
+                admin_email_templates_save($emailTplBrandId, $emailTplKind, $body);
+                return;
+            case 'DELETE':
+                admin_email_templates_reset($emailTplBrandId, $emailTplKind);
+                return;
+            default:
+                err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
+        }
+    }
+
     // Rutas con id + accion (subrecurso). Cada case usa "return" para evitar
     // fallthrough silencioso si algun handler futuro no llama exit.
     if ($endpointId !== null && $endpointAction !== null) {
@@ -219,6 +243,12 @@ try {
             admin_users_bulk_invite($body);
         case 'GET admin/users/template.csv':
             admin_users_template_csv();
+
+        // --- Admin: plantillas de correo (super_admin) ---
+        case 'GET admin/email-templates':
+            admin_email_templates_list();
+        case 'POST admin/email-templates/preview':
+            admin_email_templates_preview($body);
 
         // --- Admin: dashboards y busqueda (Fase 5) ---
         case 'GET admin/dashboard/global':
