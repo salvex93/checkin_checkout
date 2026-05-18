@@ -167,11 +167,16 @@ CREATE TABLE IF NOT EXISTS overtime_requests (
     hours DECIMAL(3,1) NOT NULL,
     reason VARCHAR(240) NULL,
     status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    request_type ENUM('new','edit') NOT NULL DEFAULT 'new',
+    referenced_request_id INT NULL,
+    new_hours DECIMAL(3,1) NULL,
     requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     resolved_at DATETIME NULL,
     INDEX idx_otreq_status (status),
+    INDEX idx_otreq_type (request_type),
     CONSTRAINT fk_otreq_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    CONSTRAINT fk_otreq_record FOREIGN KEY (record_id) REFERENCES attendance_records(id) ON DELETE CASCADE
+    CONSTRAINT fk_otreq_record FOREIGN KEY (record_id) REFERENCES attendance_records(id) ON DELETE CASCADE,
+    CONSTRAINT fk_otreq_ref FOREIGN KEY (referenced_request_id) REFERENCES overtime_requests(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS audit_log (

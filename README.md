@@ -344,7 +344,9 @@ Remove-Item storage\melius.db
 # luego aplicar de nuevo las migraciones y crear super_admin
 ```
 
-En MySQL (HostGator), `sql/schema.mysql.sql` ya incluye todas las columnas y tablas que crean las migraciones, por lo que no se ejecutan los scripts; basta importar el SQL via phpMyAdmin.
+En MySQL, `sql/schema.mysql.sql` ya incluye todas las columnas y tablas que crean las migraciones, por lo que en bases nuevas basta importarlo via phpMyAdmin.
+
+Para bases MySQL **ya desplegadas antes de la integracion de ediciones de horas extra**, ejecutar `sql/fix_overtime_mysql.sql` desde phpMyAdmin (pestaña SQL). Es idempotente: detecta columnas existentes en `INFORMATION_SCHEMA` antes de cada ALTER, asi que se puede correr varias veces sin riesgo. Sin esa migracion, el endpoint `POST records/overtime` falla con `Unknown column 'request_type'` y el cliente recibe `Error interno.`.
 
 ---
 

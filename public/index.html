@@ -308,21 +308,21 @@
         const TOUR_STORAGE_KEY = 'melius.tour.v1.completed';
 
         const TOUR_STEPS_USER = [
-            { sel: 'header-user', title: 'Tu identidad', body: 'Aquí ves tu nombre, marca y empresa asignada. Si la empresa es incorrecta, toca el enlace de abajo para solicitar cambio.' },
-            { sel: 'btn-clockin', title: 'Marcar entrada', body: 'Pulsa este botón al iniciar tu jornada. Solo se habilita una vez por día.' },
-            { sel: 'btn-clockout', title: 'Marcar salida', body: 'Al terminar tu jornada, marca la salida. Se calculan automáticamente las horas trabajadas.' },
-            { sel: 'btn-overtime', title: 'Horas extra', body: 'Solicita horas extra al admin con justificación. Quedan en pendiente hasta su aprobación.' },
-            { sel: 'btn-history', title: 'Tu historial', body: 'Revisa todos tus registros previos, edita motivos si hubo cambios y descarga reportes.' },
-            { sel: 'user-menu', title: 'Tu menú de usuario', body: 'Desde aquí cambias de tema, repites este tutorial o cierras sesión. También encuentras tu correo y nombre de sesión activa.' },
+            { sel: 'header-user', title: 'Tu identidad', body: 'Aquí ves tu nombre, la marca y la empresa a la que estás asignado. Si la empresa no corresponde, solicita el cambio desde el enlace inferior. Solo puedes pedir cambios entre empresas de la misma marca.' },
+            { sel: 'btn-clockin', title: 'Marcar entrada', body: 'Inicia tu jornada con un solo toque. El sistema registra la hora exacta y tu zona horaria. Solo puedes marcar entrada una vez al día.' },
+            { sel: 'btn-clockout', title: 'Marcar salida', body: 'Cierra tu jornada al terminar. Si olvidaste marcar el día anterior y entras antes de las 06:00, el sistema te preguntará si fueron horas extra o un olvido.' },
+            { sel: 'btn-overtime', title: 'Horas extra', body: 'Declara horas extra para hoy o hasta 7 días atrás (máximo 6 horas por jornada). Necesitas tener una jornada registrada en esa fecha. Quedan en pendiente hasta que el administrador apruebe. Si ya están aprobadas y necesitas ajustarlas, pide una edición.' },
+            { sel: 'btn-history', title: 'Tu historial', body: 'Consulta todos tus registros previos con horas trabajadas, estatus de horas extra y motivos de cierre. Puedes exportar tu historial a CSV cuando lo necesites.' },
+            { sel: 'user-menu', title: 'Tu menú de usuario', body: 'Desde aquí cambias entre tema claro y oscuro, repites este tutorial cuando quieras o cierras sesión. También verás tu correo y nombre de la sesión activa.' },
         ];
 
         const TOUR_STEPS_ADMIN = [
-            { sel: 'admin-header', title: 'Panel administrativo', body: 'Estás en el Admin Console. Tienes acceso a estadísticas, registros del equipo y configuración.' },
-            { sel: 'admin-tab-dashboard', title: 'Dashboard', body: 'Resumen general: horas trabajadas, solicitudes pendientes y consultores activos.' },
-            { sel: 'admin-tab-records', title: 'Registros', body: 'Todos los marcajes del equipo. Filtra por consultor, fecha o empresa.' },
-            { sel: 'admin-tab-agents', title: 'Consultores', body: 'Invita nuevos consultores, gestiona perfiles y reenvía invitaciones pendientes.' },
-            { sel: 'admin-tab-requests', title: 'Solicitudes', body: 'Aprueba o rechaza cambios y horas extra solicitadas por el equipo.' },
-            { sel: 'admin-user-menu', title: 'Tu menú de usuario', body: 'Desde aquí regresas al checador, cambias de tema, repites este tutorial o cierras sesión.' },
+            { sel: 'admin-header', title: 'Panel administrativo', body: 'Aquí gestionas a tu equipo: consultores, empresas, solicitudes pendientes y reportes. Tu vista depende de tu rol (admin o super admin).' },
+            { sel: 'admin-tab-dashboard', title: 'Dashboard', body: 'Resumen ejecutivo del día: horas trabajadas, horas extra pendientes y aprobadas, consultores activos y solicitudes que requieren tu atención.' },
+            { sel: 'admin-tab-records', title: 'Registros', body: 'Todos los marcajes del equipo. Filtra por consultor, fecha, empresa o estatus. Exporta a CSV para reportes externos.' },
+            { sel: 'admin-tab-agents', title: 'Consultores', body: 'Invita consultores por correo (individual o por CSV masivo), gestiona sus perfiles, reenvía invitaciones pendientes y desactiva accesos cuando salgan del equipo.' },
+            { sel: 'admin-tab-requests', title: 'Solicitudes', body: 'Aprueba o rechaza cambios de empresa y horas extra solicitadas por los consultores. Las horas aprobadas se contabilizan automáticamente en los reportes.' },
+            { sel: 'admin-user-menu', title: 'Tu menú de usuario', body: 'Desde aquí vuelves a tu checador personal, alternas el tema, repites este tutorial o cierras sesión.' },
         ];
 
         function getTourSeen(viewKey) {
