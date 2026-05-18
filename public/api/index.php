@@ -125,7 +125,12 @@ try {
 
     switch ("{$method} {$endpoint}") {
         // --- CSRF token ---
+        // Headers explicitos para evitar que Cloudflare/cualquier intermediario
+        // cachee la respuesta y entregue el mismo token a varios usuarios.
         case 'GET csrf':
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+            header('Pragma: no-cache');
+            header('Vary: Cookie');
             ok(['csrf_token' => csrf_token()]);
 
         // --- Branding (publico, pre-login) ---

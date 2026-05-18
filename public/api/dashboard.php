@@ -234,7 +234,15 @@ function admin_agents_search(): never {
         $where[] = 'u.company_id = ?';
         $params[] = $companyId;
     }
-    if ($status !== '') {
+    if ($status === 'pending_confirmation') {
+        // Pendiente = invitado que aun no cambia su password temporal.
+        // La columna status puede quedar 'active' tras el insert (ver admin_users_create_invited);
+        // el criterio real de pendiente vive en must_change_password.
+        $where[] = "u.must_change_password = 1 AND u.status <> 'disabled'";
+    } elseif ($status === 'active') {
+        // Activo "real" = status active y ya cambio su password inicial.
+        $where[] = "u.status = 'active' AND u.must_change_password = 0";
+    } elseif ($status !== '') {
         $where[] = 'u.status = ?';
         $params[] = $status;
     }

@@ -140,6 +140,23 @@
             CSRF_TOKEN = d.csrf_token;
         }
 
+        // Wrapper para requests mutantes: si el server responde CSRF_INVALID
+        // (token desincronizado por sesion nueva, cache intermediario o cookie
+        // que llego despues del primer fetch), refrescamos el token y reintentamos
+        // UNA sola vez. Evita el "Token CSRF invalido o ausente" en el primer
+        // login de invitados que abren el link desde un correo.
+        async function apiPost(path, body) {
+            try {
+                return await apiFetch(path, { method: 'POST', body });
+            } catch (err) {
+                if (err && err.code === 'CSRF_INVALID') {
+                    await fetchCsrf();
+                    return await apiFetch(path, { method: 'POST', body });
+                }
+                throw err;
+            }
+        }
+
         // =====================================================================
         // Sistema de toasts (reemplaza alert() — alert es modal blocking y feo)
         // =====================================================================
@@ -282,6 +299,149 @@
         );
 
         // =====================================================================
+        // Tutorial interactivo (tour guiado)
+        // Selector via data-tour="key". Posiciona un tooltip junto al elemento
+        // con scroll automatico. Persiste finalizacion en localStorage por rol,
+        // pero permite reiniciarlo desde el menu de usuario.
+        // =====================================================================
+
+        const TOUR_STORAGE_KEY = 'melius.tour.v1.completed';
+
+        const TOUR_STEPS_USER = [
+            { sel: 'header-user', title: 'Tu identidad', body: 'Aqui ves tu nombre, marca y empresa asignada. Si la empresa es incorrecta, toca el enlace de abajo para solicitar cambio.' },
+            { sel: 'btn-clockin', title: 'Marcar entrada', body: 'Pulsa este boton al iniciar tu jornada. Solo se habilita una vez por dia.' },
+            { sel: 'btn-clockout', title: 'Marcar salida', body: 'Al terminar tu jornada, marca la salida. Se calculan automaticamente las horas trabajadas.' },
+            { sel: 'btn-overtime', title: 'Horas extra', body: 'Solicita horas extra al admin con justificacion. Quedan en pendiente hasta su aprobacion.' },
+            { sel: 'btn-history', title: 'Tu historial', body: 'Revisa todos tus registros previos, edita motivos si hubo cambios y descarga reportes.' },
+            { sel: 'btn-theme', title: 'Tema claro/oscuro', body: 'Cambia entre tema claro y oscuro segun tu preferencia. Se recuerda en tu dispositivo.' },
+            { sel: 'btn-logout', title: 'Cerrar sesion', body: 'Al terminar, cierra sesion para proteger tu cuenta — sobre todo en dispositivos compartidos.' },
+        ];
+
+        const TOUR_STEPS_ADMIN = [
+            { sel: 'admin-header', title: 'Panel administrativo', body: 'Estas en el Admin Console. Tienes acceso a estadisticas, registros del equipo y configuracion.' },
+            { sel: 'admin-tab-dashboard', title: 'Dashboard', body: 'Resumen general: horas trabajadas, solicitudes pendientes y consultores activos.' },
+            { sel: 'admin-tab-records', title: 'Registros', body: 'Todos los marcajes del equipo. Filtra por consultor, fecha o empresa.' },
+            { sel: 'admin-tab-agents', title: 'Consultores', body: 'Invita nuevos consultores, gestiona perfiles y reenvia invitaciones pendientes.' },
+            { sel: 'admin-tab-requests', title: 'Solicitudes', body: 'Aprueba o rechaza cambios y horas extra solicitadas por el equipo.' },
+            { sel: 'admin-user-menu', title: 'Tu menu de usuario', body: 'Desde aqui regresas al checador, cambias de tema, repites este tutorial o cierras sesion.' },
+        ];
+
+        function getTourSeen(viewKey) {
+            try {
+                const raw = localStorage.getItem(TOUR_STORAGE_KEY);
+                if (!raw) return false;
+                const seen = JSON.parse(raw);
+                return seen[viewKey] === true;
+            } catch (_) { return false; }
+        }
+
+        function markTourSeen(viewKey) {
+            try {
+                const raw = localStorage.getItem(TOUR_STORAGE_KEY);
+                const seen = raw ? JSON.parse(raw) : {};
+                seen[viewKey] = true;
+                localStorage.setItem(TOUR_STORAGE_KEY, JSON.stringify(seen));
+            } catch (_) {}
+        }
+
+        const TourTooltip = ({ steps, onClose }) => {
+            const [idx, setIdx] = useState(0);
+            const [box, setBox] = useState(null);
+
+            useEffect(() => {
+                let raf;
+                const measure = () => {
+                    const step = steps[idx];
+                    if (!step) { setBox(null); return; }
+                    const el = document.querySelector(`[data-tour="${step.sel}"]`);
+                    if (!el) { setBox({ missing: true }); return; }
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    raf = requestAnimationFrame(() => {
+                        const r = el.getBoundingClientRect();
+                        setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
+                    });
+                };
+                measure();
+                window.addEventListener('resize', measure);
+                window.addEventListener('scroll', measure, true);
+                return () => {
+                    if (raf) cancelAnimationFrame(raf);
+                    window.removeEventListener('resize', measure);
+                    window.removeEventListener('scroll', measure, true);
+                };
+            }, [idx, steps]);
+
+            const step = steps[idx];
+            if (!step) return null;
+
+            const total = steps.length;
+            const isLast = idx === total - 1;
+
+            // Posicionar tooltip debajo del elemento (o arriba si no cabe).
+            let tooltipStyle = { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', maxWidth: 'calc(100vw - 32px)' };
+            if (box && !box.missing) {
+                const vh = window.innerHeight;
+                const placeBelow = box.top + box.height + 200 < vh;
+                if (placeBelow) {
+                    tooltipStyle = { position: 'fixed', top: `${box.top + box.height + 12}px`, left: '16px', right: '16px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' };
+                } else {
+                    tooltipStyle = { position: 'fixed', bottom: `${vh - box.top + 12}px`, left: '16px', right: '16px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' };
+                }
+            }
+
+            return (
+                <div className="fixed inset-0 z-[60] pointer-events-none">
+                    {/* Overlay oscuro con recorte sobre el elemento destacado */}
+                    <div className="absolute inset-0 bg-slate-900/70 pointer-events-auto" onClick={onClose}></div>
+                    {box && !box.missing && (
+                        <div
+                            className="absolute rounded-2xl ring-4 ring-melius-cyan ring-offset-2 ring-offset-slate-900/0 pointer-events-none animate-pulse"
+                            style={{ top: box.top - 4, left: box.left - 4, width: box.width + 8, height: box.height + 8 }}
+                        ></div>
+                    )}
+                    {/* Tooltip */}
+                    <div
+                        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-5 pointer-events-auto anim-zoom-in"
+                        style={tooltipStyle}
+                        role="dialog"
+                        aria-label={step.title}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-melius-cyan">Tutorial · {idx + 1}/{total}</span>
+                            <button onClick={onClose} aria-label="Cerrar tutorial" className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                                <Icon name="X" size={18} />
+                            </button>
+                        </div>
+                        <h3 className="font-black text-lg text-slate-800 dark:text-slate-100 mb-1">{step.title}</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">{step.body}</p>
+                        {box?.missing && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 mb-3 font-bold">
+                                Este apartado no esta visible ahora. Salta al siguiente paso o cierra el tutorial.
+                            </p>
+                        )}
+                        <div className="flex items-center justify-between gap-2">
+                            <button onClick={onClose} className="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                Saltar
+                            </button>
+                            <div className="flex gap-2">
+                                {idx > 0 && (
+                                    <button onClick={() => setIdx(i => i - 1)}
+                                        className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
+                                        Atras
+                                    </button>
+                                )}
+                                <button onClick={() => isLast ? onClose() : setIdx(i => i + 1)}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold btn-melius">
+                                    {isLast ? 'Terminar' : 'Siguiente'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // =====================================================================
         // App principal
         // =====================================================================
 
@@ -346,6 +506,27 @@
             const [theme, setTheme] = useState(() => (document.documentElement.classList.contains('dark') ? 'dark' : 'light'));
             const [companies, setCompanies] = useState([]);
             const [submitting, setSubmitting] = useState(false);
+            // tourKey: null | 'user' | 'admin'. Forzar = ignorar localStorage (replay desde menu).
+            const [tourKey, setTourKey] = useState(null);
+
+            const startTour = useCallback((key) => setTourKey(key), []);
+            const closeTour = useCallback(() => {
+                if (tourKey) markTourSeen(tourKey);
+                setTourKey(null);
+            }, [tourKey]);
+
+            // Auto-arrancar tour al entrar a dashboard/admin la primera vez.
+            useEffect(() => {
+                if (!currentUser) return;
+                if (view === 'dashboard' && !getTourSeen('user')) {
+                    const t = setTimeout(() => setTourKey('user'), 600);
+                    return () => clearTimeout(t);
+                }
+                if (view === 'admin-panel' && !getTourSeen('admin')) {
+                    const t = setTimeout(() => setTourKey('admin'), 600);
+                    return () => clearTimeout(t);
+                }
+            }, [view, currentUser]);
 
             const toggleTheme = useCallback(() => {
                 setTheme(prev => {
@@ -401,10 +582,7 @@
                 const data = new FormData(e.target);
                 setSubmitting(true);
                 try {
-                    const d = await apiFetch('auth/login', {
-                        method: 'POST',
-                        body: { email: data.get('email'), password: data.get('password') }
-                    });
+                    const d = await apiPost('auth/login', { email: data.get('email'), password: data.get('password') });
                     CSRF_TOKEN = d.csrf_token || CSRF_TOKEN;
                     setCurrentUser(d.user);
                     if (d.user.must_change_password) {
@@ -490,6 +668,7 @@
                             companies={companies}
                             loadCompanies={loadCompanies}
                             onGoAdmin={() => setView('admin-panel')}
+                            onStartTour={() => startTour('user')}
                         />
                     )}
 
@@ -500,8 +679,12 @@
                             theme={theme}
                             onToggleTheme={toggleTheme}
                             onGoDashboard={() => setView('dashboard')}
+                            onStartTour={() => startTour('admin')}
                         />
                     )}
+
+                    {tourKey === 'user' && <TourTooltip steps={TOUR_STEPS_USER} onClose={closeTour} />}
+                    {tourKey === 'admin' && <TourTooltip steps={TOUR_STEPS_ADMIN} onClose={closeTour} />}
 
                     <footer className="mt-8 sm:mt-12 text-center text-slate-300 dark:text-slate-600 font-bold text-[10px] uppercase tracking-[0.5em] sm:tracking-[0.8em]">
                         Melius Services · Infrastructure
@@ -614,7 +797,7 @@
                 if (submitting) return;
                 setSubmitting(true);
                 try {
-                    const d = await apiFetch('auth/forgot-password', { method: 'POST', body: { email } });
+                    const d = await apiPost('auth/forgot-password', { email });
                     toast('success', d.message);
                     setSent(true);
                 } catch (err) { toast('error', err.message); }
@@ -657,7 +840,7 @@
                 if (newPwd !== confirmPwd) { toast('error', 'Las contrasenas no coinciden.'); return; }
                 setSubmitting(true);
                 try {
-                    await apiFetch('auth/reset-password', { method: 'POST', body: { token, new_password: newPwd, confirm_password: confirmPwd } });
+                    await apiPost('auth/reset-password', { token, new_password: newPwd, confirm_password: confirmPwd });
                     toast('success', 'Contrasena restablecida. Inicia sesion.');
                     onDone();
                 } catch (err) { toast('error', err.message); }
@@ -709,7 +892,7 @@
                         current_password: currentPwd, new_password: newPwd, confirm_password: confirmPwd
                     };
                     if (needsCompany) payload.company_id = parseInt(companyId, 10);
-                    await apiFetch('auth/change-password', { method: 'POST', body: payload });
+                    await apiPost('auth/change-password', payload);
                     toast('success', 'Contrasena actualizada.');
                     onDone();
                 } catch (err) { toast('error', err.message); }
@@ -761,7 +944,7 @@
         // Dashboard de usuario
         // =====================================================================
 
-        const UserDashboard = ({ currentUser, onLogout, theme, onToggleTheme, companies, loadCompanies, onGoAdmin }) => {
+        const UserDashboard = ({ currentUser, onLogout, theme, onToggleTheme, companies, loadCompanies, onGoAdmin, onStartTour }) => {
             const canSwitchToAdmin = currentUser.role === 'admin' || currentUser.role === 'super_admin';
             const { push: toast } = useToast();
             const [todayRecord, setTodayRecord] = useState(null);
@@ -838,7 +1021,7 @@
             return (
                 <div className="max-w-4xl w-full flex flex-col gap-6 sm:gap-8 anim-fade-in">
                     {/* Header */}
-                    <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl dark:shadow-black/40 border border-slate-100 dark:border-slate-800 gap-4 md:gap-6">
+                    <div data-tour="header-user" className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl dark:shadow-black/40 border border-slate-100 dark:border-slate-800 gap-4 md:gap-6">
                         <div className="flex items-center gap-4 sm:gap-5 w-full md:w-auto">
                             {currentUser.brand_logo_url ? (
                                 <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white dark:bg-slate-800 ring-melius flex items-center justify-center p-2 shrink-0" title={currentUser.brand_name || ''}>
@@ -863,7 +1046,15 @@
                             </div>
                         </div>
                         <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
-                            <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                            <div data-tour="btn-theme"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
+                            {onStartTour && (
+                                <button onClick={onStartTour}
+                                    title="Ver tutorial"
+                                    className="px-3 py-2.5 sm:py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center gap-2">
+                                    <Icon name="AlertTriangle" size={16} className="rotate-180" />
+                                    Tutorial
+                                </button>
+                            )}
                             {canSwitchToAdmin && onGoAdmin && (
                                 <button onClick={onGoAdmin}
                                     title="Cambiar a vista de administracion"
@@ -871,7 +1062,7 @@
                                     Admin Console &rarr;
                                 </button>
                             )}
-                            <button onClick={onLogout}
+                            <button data-tour="btn-logout" onClick={onLogout}
                                 className="px-4 sm:px-6 py-2.5 sm:py-3 bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-300 rounded-2xl font-bold text-sm hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all">
                                 Cerrar Sesion
                             </button>
@@ -885,7 +1076,7 @@
                         <>
                             {/* Acciones principales */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
-                                <button onClick={() => handleClockIn()} disabled={!!todayRecord || submitting} aria-label="Marcar entrada"
+                                <button data-tour="btn-clockin" onClick={() => handleClockIn()} disabled={!!todayRecord || submitting} aria-label="Marcar entrada"
                                     className={`p-6 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[3rem] border-4 transition-all flex flex-col items-center gap-4 sm:gap-5 no-select ${
                                         todayRecord
                                             ? 'bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800 opacity-60 grayscale cursor-not-allowed'
@@ -901,7 +1092,7 @@
                                     </div>
                                 </button>
 
-                                <button onClick={handleClockOut} disabled={!todayRecord || !!todayRecord?.exit_time || submitting} aria-label="Marcar salida"
+                                <button data-tour="btn-clockout" onClick={handleClockOut} disabled={!todayRecord || !!todayRecord?.exit_time || submitting} aria-label="Marcar salida"
                                     className={`p-6 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[3rem] border-4 transition-all flex flex-col items-center gap-4 sm:gap-5 no-select ${
                                         (!todayRecord || todayRecord?.exit_time)
                                             ? 'bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800 opacity-60 grayscale cursor-not-allowed'
@@ -920,7 +1111,7 @@
                             </div>
 
                             {/* Card horas extra */}
-                            <div className="bg-white dark:bg-slate-900 p-5 sm:p-7 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div data-tour="btn-overtime" className="bg-white dark:bg-slate-900 p-5 sm:p-7 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                 <div className="flex items-center gap-3 sm:gap-4">
                                     <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-2xl text-amber-600 dark:text-amber-300 shrink-0"><Icon name="Hourglass" /></div>
                                     <div>
@@ -938,7 +1129,7 @@
                             </div>
 
                             {/* Historial */}
-                            <div className="bg-white dark:bg-slate-900 p-5 sm:p-7 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800">
+                            <div data-tour="btn-history" className="bg-white dark:bg-slate-900 p-5 sm:p-7 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800">
                                 <h3 className="font-black text-slate-800 dark:text-slate-100 mb-6 sm:mb-8 flex items-center gap-3 uppercase tracking-widest text-xs">
                                     <Icon name="History" className="text-blue-500 dark:text-blue-300 w-4 h-4" /> Mis Jornadas Laborales
                                 </h3>
@@ -1115,7 +1306,7 @@
         // Panel admin
         // =====================================================================
 
-        const AdminPanel = ({ currentUser, onLogout, theme, onToggleTheme, onGoDashboard }) => {
+        const AdminPanel = ({ currentUser, onLogout, theme, onToggleTheme, onGoDashboard, onStartTour }) => {
             const { push: toast } = useToast();
             const { tenantBranding } = useBranding();
             const isSuper = currentUser.role === 'super_admin';
@@ -1187,7 +1378,7 @@
                 const active = activeTab === tab.id;
                 const badge = tab.id === 'requests' && totalRequests > 0;
                 return (
-                    <button onClick={() => goTab(tab.id)}
+                    <button data-tour={`admin-tab-${tab.id}`} onClick={() => goTab(tab.id)}
                         className={`shrink-0 px-3 lg:px-4 py-2 rounded-xl text-xs lg:text-sm font-bold flex items-center gap-2 transition-all relative ${active ? 'btn-melius shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}>
                         <Icon name={tab.icon} size={16} />
                         <span>{tab.label}</span>
@@ -1199,7 +1390,7 @@
             return (
                 <div className="max-w-6xl w-full flex flex-col gap-4 sm:gap-6 pb-24 md:pb-0">
                     {/* HEADER */}
-                    <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 gap-4">
+                    <div data-tour="admin-header" className="flex items-center justify-between bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 gap-4">
                         {/* Logo + titulo */}
                         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                             <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 ring-melius flex items-center justify-center p-1.5 shrink-0">
@@ -1236,7 +1427,7 @@
                             </div>
 
                             {/* Menu usuario */}
-                            <div className="relative ml-1" ref={userDesktopRef}>
+                            <div data-tour="admin-user-menu" className="relative ml-1" ref={userDesktopRef}>
                                 <button onClick={() => setUserMenuOpen(o => !o)}
                                     className="shrink-0 pl-2 pr-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs lg:text-sm font-bold flex items-center gap-2 transition-all">
                                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-melius-cyan to-melius-violet flex items-center justify-center text-white font-black text-xs">
@@ -1263,6 +1454,13 @@
                                             <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} />
                                             {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
                                         </button>
+                                        {onStartTour && (
+                                            <button onClick={() => { setUserMenuOpen(false); onStartTour(); }}
+                                                className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                                <Icon name="ShieldCheck" size={16} />
+                                                Ver tutorial
+                                            </button>
+                                        )}
                                         <div className="border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
                                             <button onClick={() => { setUserMenuOpen(false); onLogout(); }}
                                                 className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
@@ -1275,34 +1473,49 @@
                             </div>
                         </div>
 
-                        {/* Movil: solo avatar/menu (los tabs van en bottom nav) */}
-                        <div className="md:hidden relative" ref={userMobileRef}>
+                        {/* Movil: pill con avatar + nombre + chevron (los tabs van en bottom nav).
+                            Antes era solo un circulo, los usuarios no descubrian que era tappable. */}
+                        <div className="md:hidden relative shrink-0" ref={userMobileRef}>
                             <button onClick={() => setUserMenuOpen(o => !o)}
-                                className="w-10 h-10 rounded-full bg-gradient-to-br from-melius-cyan to-melius-violet flex items-center justify-center text-white font-black">
-                                {(currentUser.name || '?').charAt(0).toUpperCase()}
+                                aria-haspopup="menu"
+                                aria-expanded={userMenuOpen}
+                                aria-label="Abrir menu de usuario"
+                                className="flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-melius-cyan to-melius-violet flex items-center justify-center text-white font-black text-sm">
+                                    {(currentUser.name || '?').charAt(0).toUpperCase()}
+                                </div>
+                                <Icon name="ChevronDown" size={16} className={`text-slate-500 dark:text-slate-300 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
                             </button>
                             {userMenuOpen && (
-                                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-30">
-                                    <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
-                                        <div className="text-xs text-slate-400">Sesion activa</div>
-                                        <div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{currentUser.email || currentUser.name}</div>
+                                <div role="menu" className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 z-30 anim-fade-in">
+                                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="text-[10px] uppercase tracking-widest text-slate-400 font-black">Sesion activa</div>
+                                        <div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate mt-0.5">{currentUser.name}</div>
+                                        <div className="text-[11px] text-slate-400 truncate">{currentUser.email || ''}</div>
                                     </div>
                                     {onGoDashboard && (
                                         <button onClick={() => { setUserMenuOpen(false); onGoDashboard(); }}
-                                            className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-melius-cyan hover:bg-cyan-50 dark:hover:bg-cyan-900/20">
-                                            <Icon name="Clock" size={16} />
-                                            Mi jornada
+                                            className="w-full text-left px-4 py-3 text-sm font-bold flex items-center gap-3 text-melius-cyan hover:bg-cyan-50 dark:hover:bg-cyan-900/20">
+                                            <Icon name="Clock" size={18} />
+                                            Ir al checador
                                         </button>
                                     )}
                                     <button onClick={() => { setUserMenuOpen(false); onToggleTheme(); }}
-                                        className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                                        <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} />
-                                        {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+                                        className="w-full text-left px-4 py-3 text-sm font-bold flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                        <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={18} />
+                                        {theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
                                     </button>
+                                    {onStartTour && (
+                                        <button onClick={() => { setUserMenuOpen(false); onStartTour(); }}
+                                            className="w-full text-left px-4 py-3 text-sm font-bold flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                            <Icon name="ShieldCheck" size={18} />
+                                            Ver tutorial
+                                        </button>
+                                    )}
                                     <div className="border-t border-slate-100 dark:border-slate-800 mt-1 pt-1">
                                         <button onClick={() => { setUserMenuOpen(false); onLogout(); }}
-                                            className="w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
-                                            <Icon name="LogOut" size={16} />
+                                            className="w-full text-left px-4 py-3 text-sm font-bold flex items-center gap-3 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                            <Icon name="LogOut" size={18} />
                                             Cerrar sesion
                                         </button>
                                     </div>
@@ -1362,19 +1575,55 @@
                         </button>
                     </nav>
 
-                    {/* DRAWER MOVIL "MAS" */}
+                    {/* DRAWER MOVIL "MAS" — incluye accesos rapidos (checador, tema, logout)
+                        ademas de las tabs secundarias. Asi el usuario los encuentra aunque
+                        no descubra el avatar del header. */}
                     {mobileMoreOpen && (
                         <div className="md:hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end" onClick={() => setMobileMoreOpen(false)}>
-                            <div className="bg-white dark:bg-slate-900 w-full rounded-t-3xl p-4 space-y-1 anim-zoom-in" onClick={e => e.stopPropagation()}>
+                            <div className="bg-white dark:bg-slate-900 w-full rounded-t-3xl p-4 space-y-1 anim-zoom-in max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                                 <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-3"></div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 pb-1">Configuracion</p>
-                                {secondaryTabs.map(t => (
-                                    <button key={t.id} onClick={() => goTab(t.id)}
-                                        className={`w-full text-left px-3 py-3 text-sm font-bold flex items-center gap-3 rounded-xl ${activeTab === t.id ? 'bg-cyan-50 dark:bg-cyan-900/20 text-melius-cyan' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                                        <Icon name={t.icon} size={18} />
-                                        {t.label}
+
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 pb-1">Acciones rapidas</p>
+                                {onGoDashboard && (
+                                    <button onClick={() => { setMobileMoreOpen(false); onGoDashboard(); }}
+                                        className="w-full text-left px-3 py-3 text-sm font-bold flex items-center gap-3 rounded-xl text-melius-cyan bg-cyan-50/60 dark:bg-cyan-900/20 hover:bg-cyan-50 dark:hover:bg-cyan-900/30">
+                                        <Icon name="Clock" size={18} />
+                                        Ir al checador
                                     </button>
-                                ))}
+                                )}
+                                <button onClick={() => { setMobileMoreOpen(false); onToggleTheme(); }}
+                                    className="w-full text-left px-3 py-3 text-sm font-bold flex items-center gap-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                    <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={18} />
+                                    {theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
+                                </button>
+                                {onStartTour && (
+                                    <button onClick={() => { setMobileMoreOpen(false); onStartTour(); }}
+                                        className="w-full text-left px-3 py-3 text-sm font-bold flex items-center gap-3 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                        <Icon name="ShieldCheck" size={18} />
+                                        Ver tutorial
+                                    </button>
+                                )}
+
+                                {secondaryTabs.length > 0 && (
+                                    <>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 pt-3 pb-1">Configuracion</p>
+                                        {secondaryTabs.map(t => (
+                                            <button key={t.id} onClick={() => goTab(t.id)}
+                                                className={`w-full text-left px-3 py-3 text-sm font-bold flex items-center gap-3 rounded-xl ${activeTab === t.id ? 'bg-cyan-50 dark:bg-cyan-900/20 text-melius-cyan' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                                                <Icon name={t.icon} size={18} />
+                                                {t.label}
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+
+                                <div className="border-t border-slate-100 dark:border-slate-800 mt-2 pt-2">
+                                    <button onClick={() => { setMobileMoreOpen(false); onLogout(); }}
+                                        className="w-full text-left px-3 py-3 text-sm font-bold flex items-center gap-3 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                        <Icon name="LogOut" size={18} />
+                                        Cerrar sesion
+                                    </button>
+                                </div>
                                 <button onClick={() => setMobileMoreOpen(false)}
                                     className="w-full mt-2 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-200">
                                     Cerrar
@@ -2868,10 +3117,11 @@
                                         <p className="text-xs text-slate-500 truncate">{a.email}</p>
                                     </div>
                                     <span className="text-xs text-slate-500 truncate max-w-[120px]">{a.company_name || 'Sin empresa'}</span>
-                                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
                                     {a.must_change_password ? (
                                         <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">pendiente</span>
-                                    ) : null}
+                                    ) : (
+                                        <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
+                                    )}
                                     <div className="flex items-center gap-2 ml-auto">
                                         {a.must_change_password && a.status === 'active' && (
                                             <button onClick={() => openResend(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-50 text-cyan-600 hover:bg-cyan-100 dark:bg-cyan-900/30 dark:text-cyan-300 inline-flex items-center gap-1.5">
@@ -3370,10 +3620,11 @@
                                         <p className="text-xs text-slate-500 truncate">{a.email}</p>
                                     </div>
                                     <span className="text-xs text-slate-500 truncate max-w-[120px]">{a.company_name || 'Sin empresa'}</span>
-                                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
                                     {a.must_change_password ? (
                                         <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">pendiente</span>
-                                    ) : null}
+                                    ) : (
+                                        <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${a.status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{a.status}</span>
+                                    )}
                                     {a.must_change_password && a.status === 'active' && !isTargetSuper && (
                                         <button onClick={() => openResend(a)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-50 text-cyan-600 hover:bg-cyan-100 dark:bg-cyan-900/30 dark:text-cyan-300 inline-flex items-center gap-1.5">
                                             <Icon name="Mail" size={14} />
