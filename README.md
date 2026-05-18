@@ -51,7 +51,8 @@ clockin-clockout/
 │   ├── create_admin.php            Crear/promover admin
 │   ├── create_super_admin.php      Crear super_admin con password temporal
 │   ├── migrate_super_admin.php     Migracion idempotente rol super_admin (SQLite)
-│   └── migrate_overtime_edit.php   Migracion idempotente ediciones de horas extra
+│   ├── migrate_overtime_edit.php   Migracion idempotente ediciones de horas extra
+│   └── migrate_email_templates.php Migracion idempotente tabla email_templates
 ├── storage/                        DB SQLite local (gitignored, se crea sola)
 ├── .env.example                    Plantilla de variables de entorno
 ├── .gitignore
@@ -311,6 +312,19 @@ Flujo de primer ingreso:
 
 `super_admin` nunca se promueve ni degrada via UI: se crea por script CLI (`create_super_admin.php`) y se purga por SQL directo.
 
+### Plantillas de correo (super_admin)
+
+Panel `Plantillas` dentro del admin: permite editar `subject`, `intro_html` y `cta_label` de los 4 correos transaccionales por marca paraguas. Si una marca no tiene override, se usa el copy hardcoded en `mailer.php`.
+
+| Kind | Cuando se envia |
+|---|---|
+| `invitation` | Alta de consultor o admin (incluye carga masiva CSV) |
+| `password_reset` | Flujo de forgot-password |
+| `admin_disabled` | Aviso al admin afectado cuando se desactiva su cuenta |
+| `admin_delete_receipt` | Recibo al ejecutor de la desactivacion |
+
+Placeholders soportados: `{{name}}`, `{{company}}`, `{{brand_name}}`, `{{hours}}`, `{{actor_name}}`, `{{target_name}}`, `{{target_email}}`. El render escapa HTML para prevenir XSS desde inputs de DB. Vista previa en vivo en el panel.
+
 ---
 
 ## Migraciones disponibles
@@ -321,6 +335,7 @@ Cada script en `scripts/migrate_*.php` es idempotente: detecta si la migracion y
 |---|---|---|
 | `migrate_super_admin.php` | Rol `super_admin`, `must_change_password`, `password_changed_at`, tabla `password_reset_tokens`, empresa "Melius Services" | Primera vez tras clonar |
 | `migrate_overtime_edit.php` | Columnas para edicion de horas extra con aprobacion (`request_type`, `referenced_request_id`, `new_hours`) | Primera vez tras clonar |
+| `migrate_email_templates.php` | Tabla `email_templates` para overrides de subject/intro/cta por marca (kinds: invitation, password_reset, admin_disabled, admin_delete_receipt) | Primera vez tras clonar |
 
 Para resetear todo desde cero:
 ```powershell
@@ -342,6 +357,7 @@ php -S localhost:8000 -t public scripts\router.php
 # Aplicar migraciones
 php scripts\migrate_super_admin.php
 php scripts\migrate_overtime_edit.php
+php scripts\migrate_email_templates.php
 
 # Crear cuentas
 php scripts\create_super_admin.php email@empresa.com "Nombre Completo"
