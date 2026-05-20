@@ -62,3 +62,7 @@ clockin_clockout_rsa
 clockin_clockout_rsa.*
 clockin-deploy.zip
 deploy/
+
+# Scripts de deploy con credenciales en claro
+scripts/deploy_index.sh
+scripts/deploy_*.sh
