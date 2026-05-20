@@ -158,7 +158,7 @@ function mail_send_smtp(string $to, string $subject, string $html, string $text)
  */
 function email_template_load(?int $brandId, string $kind): ?array {
     if ($brandId === null) return null;
-    $allowed = ['invitation', 'password_reset', 'admin_disabled', 'admin_delete_receipt'];
+    $allowed = ['invitation', 'password_reset', 'admin_disabled', 'admin_delete_receipt', 'location_alert'];
     if (!in_array($kind, $allowed, true)) return null;
     try {
         return db_one(
@@ -628,6 +628,104 @@ HTML;
     return [
         'subject' => $subject,
         'html' => tpl_layout('Recibo de desactivacion', $body),
+        'text' => $text,
+    ];
+}
+
+
+/**
+ * Plantilla: alerta de cambio radical de ubicacion (geo IP).
+ * Notifica a super_admin global y admin del tenant cuando un clock-in/out
+ * dispara una alerta del motor geo_alerts.
+ * Acepta overrides via email_templates con kind='location_alert'.
+ */
+function mail_template_location_alert(array $params, array $overrides = []): array {
+    $brandName  = (string)($overrides['brandName'] ?? 'Melius');
+    $subjectOverride = $overrides['subjectOverride'] ?? null;
+    $introOverride   = $overrides['introOverride'] ?? null;
+    $ctaOverride     = $overrides['ctaOverride'] ?? null;
+
+    $employeeName = (string)($params['employee_name'] ?? '');
+    $employeeEmail = (string)($params['employee_email'] ?? '');
+    $companyName = (string)($params['company_name'] ?? '');
+    $prevCity = (string)($params['prev_city'] ?? '—');
+    $prevCountry = (string)($params['prev_country'] ?? '—');
+    $currCity = (string)($params['curr_city'] ?? '—');
+    $currCountry = (string)($params['curr_country'] ?? '—');
+    $distanceKm = (string)($params['distance_km'] ?? '—');
+    $speedKmh = (string)($params['speed_kmh'] ?? '—');
+    $reasons = (string)($params['reasons'] ?? '');
+    $reviewUrl = (string)($params['review_url'] ?? '');
+
+    $nameSafe = htmlspecialchars($employeeName, ENT_QUOTES, 'UTF-8');
+    $emailSafe = htmlspecialchars($employeeEmail, ENT_QUOTES, 'UTF-8');
+    $companySafe = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
+    $prevCitySafe = htmlspecialchars($prevCity, ENT_QUOTES, 'UTF-8');
+    $prevCountrySafe = htmlspecialchars($prevCountry, ENT_QUOTES, 'UTF-8');
+    $currCitySafe = htmlspecialchars($currCity, ENT_QUOTES, 'UTF-8');
+    $currCountrySafe = htmlspecialchars($currCountry, ENT_QUOTES, 'UTF-8');
+    $distanceSafe = htmlspecialchars($distanceKm, ENT_QUOTES, 'UTF-8');
+    $speedSafe = htmlspecialchars($speedKmh, ENT_QUOTES, 'UTF-8');
+    $reasonsSafe = htmlspecialchars($reasons, ENT_QUOTES, 'UTF-8');
+    $reviewUrlSafe = htmlspecialchars($reviewUrl, ENT_QUOTES, 'UTF-8');
+    $brandSafe = htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8');
+
+    $vars = [
+        'employee_name' => $employeeName,
+        'employee_email' => $employeeEmail,
+        'company' => $companyName,
+        'prev_city' => $prevCity,
+        'prev_country' => $prevCountry,
+        'curr_city' => $currCity,
+        'curr_country' => $currCountry,
+        'distance_km' => $distanceKm,
+        'speed_kmh' => $speedKmh,
+        'reasons' => $reasons,
+        'brand_name' => $brandName,
+        'review_url' => $reviewUrl,
+    ];
+
+    $introHtml = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? nl2br(email_template_render((string)$introOverride, $vars, true))
+        : "Detectamos un cambio radical de ubicacion en el marcaje de <strong>{$nameSafe}</strong> ({$emailSafe}) en <strong>{$companySafe}</strong>.";
+
+    $ctaLabel = $ctaOverride !== null && trim((string)$ctaOverride) !== ''
+        ? email_template_render((string)$ctaOverride, $vars, true)
+        : 'Revisar alerta en panel';
+
+    $body = <<<HTML
+<p style="margin:0 0 12px 0;">{$introHtml}</p>
+<table cellpadding="8" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:13px;width:100%;">
+<tr><td style="color:#991b1b;font-weight:600;width:40%;">Empleado</td><td>{$nameSafe} &lt;{$emailSafe}&gt;</td></tr>
+<tr><td style="color:#991b1b;font-weight:600;">Empresa</td><td>{$companySafe}</td></tr>
+<tr><td style="color:#991b1b;font-weight:600;">Razones</td><td><code>{$reasonsSafe}</code></td></tr>
+<tr><td style="color:#991b1b;font-weight:600;">Ubicacion previa</td><td>{$prevCitySafe}, {$prevCountrySafe}</td></tr>
+<tr><td style="color:#991b1b;font-weight:600;">Ubicacion actual</td><td>{$currCitySafe}, {$currCountrySafe}</td></tr>
+<tr><td style="color:#991b1b;font-weight:600;">Distancia</td><td>{$distanceSafe} km</td></tr>
+<tr><td style="color:#991b1b;font-weight:600;">Velocidad implicita</td><td>{$speedSafe} km/h</td></tr>
+</table>
+<p style="margin:16px 0 0 0;"><a href="{$reviewUrlSafe}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">{$ctaLabel}</a></p>
+<p style="margin:12px 0 0 0;color:#6b7280;font-size:12px;">La jornada no fue bloqueada. Marca como revisada o descartada desde el panel.</p>
+HTML;
+
+    $textIntro = $introOverride !== null && trim((string)$introOverride) !== ''
+        ? email_template_render((string)$introOverride, $vars, false)
+        : "Detectamos un cambio radical de ubicacion en el marcaje de {$employeeName} <{$employeeEmail}> en {$companyName}.";
+    $text = "{$textIntro}\n\n"
+          . "Razones: {$reasons}\n"
+          . "Previa: {$prevCity}, {$prevCountry}\n"
+          . "Actual: {$currCity}, {$currCountry}\n"
+          . "Distancia: {$distanceKm} km\n"
+          . "Velocidad: {$speedKmh} km/h\n\n"
+          . "Revisar en: {$reviewUrl}\n";
+
+    $subject = $subjectOverride !== null && trim((string)$subjectOverride) !== ''
+        ? email_template_render((string)$subjectOverride, $vars, false)
+        : "Alerta de ubicacion: {$employeeName} ({$companyName}) - {$brandName} Clockin";
+
+    return [
+        'subject' => $subject,
+        'html' => tpl_layout('Alerta de ubicacion', $body),
         'text' => $text,
     ];
 }

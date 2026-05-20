@@ -140,14 +140,55 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     overtime_status TEXT NOT NULL DEFAULT 'none' CHECK (overtime_status IN ('none','pending','approved','rejected')),
     geo_country_code TEXT NULL,
     geo_country_name TEXT NULL,
+    geo_city TEXT NULL,
+    geo_region TEXT NULL,
+    geo_lat REAL NULL,
+    geo_lon REAL NULL,
     geo_ip_masked TEXT NULL,
     geo_source TEXT NULL,
+    geo_alert_flag INTEGER NOT NULL DEFAULT 0,
+    geo_alert_reasons TEXT NULL,
+    geo_exit_country_code TEXT NULL,
+    geo_exit_city TEXT NULL,
+    geo_exit_lat REAL NULL,
+    geo_exit_lon REAL NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id, work_date),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_records_user ON attendance_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_records_alert ON attendance_records(geo_alert_flag);
+
+CREATE TABLE IF NOT EXISTS location_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    attendance_id INTEGER NOT NULL,
+    triggered_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    reason_codes TEXT NOT NULL,
+    prev_country_code TEXT NULL,
+    prev_city TEXT NULL,
+    prev_lat REAL NULL,
+    prev_lon REAL NULL,
+    prev_marked_at TEXT NULL,
+    curr_country_code TEXT NULL,
+    curr_city TEXT NULL,
+    curr_lat REAL NULL,
+    curr_lon REAL NULL,
+    distance_km REAL NULL,
+    elapsed_minutes INTEGER NULL,
+    implied_speed_kmh REAL NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed','dismissed')),
+    reviewed_by INTEGER NULL,
+    reviewed_at TEXT NULL,
+    notes TEXT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (attendance_id) REFERENCES attendance_records(id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_locales_status ON location_alerts(status, triggered_at);
+CREATE INDEX IF NOT EXISTS idx_locales_user ON location_alerts(user_id);
 
 CREATE TABLE IF NOT EXISTS change_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,7 +268,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 CREATE TABLE IF NOT EXISTS email_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     brand_id INTEGER NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('invitation','password_reset','admin_disabled','admin_delete_receipt')),
+    kind TEXT NOT NULL CHECK (kind IN ('invitation','password_reset','admin_disabled','admin_delete_receipt','location_alert')),
     subject TEXT NOT NULL,
     intro_html TEXT NOT NULL,
     cta_label TEXT NULL,

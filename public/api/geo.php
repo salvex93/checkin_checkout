@@ -63,23 +63,27 @@ function geo_is_local_ip(string $ip): bool {
 }
 
 /**
- * Resuelve pais por IP usando ip-api.com.
- * Retorna ['country_code' => 'MX', 'country_name' => 'Mexico', 'ip_masked' => '1.2.3.0', 'source' => 'ip']
+ * Resuelve pais + ciudad + coordenadas por IP usando ip-api.com.
+ * Retorna ['country_code','country_name','city','region','lat','lon','ip_masked','source']
  * o un payload vacio con source='none' si no se pudo resolver / es IP local.
- * NUNCA lanza excepciones.
+ * NUNCA lanza excepciones. lat/lon vienen como float o null.
  */
 function geo_resolve(string $ip): array {
     $masked = geo_mask_ip($ip);
     $empty = [
         'country_code' => null,
         'country_name' => null,
+        'city' => null,
+        'region' => null,
+        'lat' => null,
+        'lon' => null,
         'ip_masked' => $masked,
         'source' => 'none',
     ];
 
     if (geo_is_local_ip($ip)) return $empty;
 
-    $response = geo_http_get(GEO_API_URL . urlencode($ip) . '?fields=status,country,countryCode,message');
+    $response = geo_http_get(GEO_API_URL . urlencode($ip) . '?fields=status,country,countryCode,region,regionName,city,lat,lon,message');
     if ($response === null) return $empty;
 
     $parsed = json_decode($response, true);
@@ -87,13 +91,26 @@ function geo_resolve(string $ip): array {
     if (($parsed['status'] ?? '') !== 'success') return $empty;
 
     $code = geo_validate_country_code($parsed['countryCode'] ?? null);
+    if ($code === null) return $empty;
+
     $name = isset($parsed['country']) && is_string($parsed['country'])
         ? substr(trim($parsed['country']), 0, 80) : null;
-    if ($code === null) return $empty;
+    $city = isset($parsed['city']) && is_string($parsed['city'])
+        ? substr(trim($parsed['city']), 0, 120) : null;
+    $region = isset($parsed['regionName']) && is_string($parsed['regionName'])
+        ? substr(trim($parsed['regionName']), 0, 120) : null;
+    $lat = isset($parsed['lat']) && is_numeric($parsed['lat']) ? (float)$parsed['lat'] : null;
+    $lon = isset($parsed['lon']) && is_numeric($parsed['lon']) ? (float)$parsed['lon'] : null;
+    if ($lat !== null && ($lat < -90 || $lat > 90)) $lat = null;
+    if ($lon !== null && ($lon < -180 || $lon > 180)) $lon = null;
 
     return [
         'country_code' => $code,
         'country_name' => $name,
+        'city' => $city,
+        'region' => $region,
+        'lat' => $lat,
+        'lon' => $lon,
         'ip_masked' => $masked,
         'source' => 'ip',
     ];

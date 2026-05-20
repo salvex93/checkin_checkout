@@ -40,7 +40,13 @@ function admin_records(): never {
             'overtime_status' => $r['overtime_status'],
             'geo_country_code' => $r['geo_country_code'] ?? null,
             'geo_country_name' => $r['geo_country_name'] ?? null,
+            'geo_city' => $r['geo_city'] ?? null,
+            'geo_region' => $r['geo_region'] ?? null,
             'geo_source' => $r['geo_source'] ?? null,
+            'geo_alert_flag' => isset($r['geo_alert_flag']) ? (bool)$r['geo_alert_flag'] : false,
+            'geo_alert_reasons' => $r['geo_alert_reasons'] ?? null,
+            'geo_exit_country_code' => $r['geo_exit_country_code'] ?? null,
+            'geo_exit_city' => $r['geo_exit_city'] ?? null,
         ];
     }, $rows)]);
 }
@@ -1378,4 +1384,162 @@ function admin_email_templates_preview(array $body): never {
     }
 
     ok(['subject' => $tpl['subject'], 'html' => $tpl['html'], 'text' => $tpl['text']]);
+}
+
+
+/**
+ * GET admin/location-alerts — Lista alertas geo.
+ * super_admin: ve todas las alertas globales.
+ * admin: ve solo alertas de empleados de su misma company_id (multi-tenant safe).
+ * Filtros opcionales: ?status=pending|reviewed|dismissed (default: pending).
+ */
+function admin_location_alerts_list(): never {
+    $admin = require_admin();
+    $statusFilter = isset($_GET['status']) && in_array($_GET['status'], ['pending','reviewed','dismissed'], true)
+        ? $_GET['status'] : 'pending';
+
+    $where = ['la.status = ?'];
+    $params = [$statusFilter];
+
+    // Tenant isolation: admin no super solo ve su company.
+    if (($admin['role'] ?? '') !== 'super_admin') {
+        if (empty($admin['company_id'])) {
+            ok(['alerts' => []]);
+        }
+        $where[] = 'u.company_id = ?';
+        $params[] = (int)$admin['company_id'];
+    }
+
+    $sql = 'SELECT la.*, u.name AS user_name, u.email AS user_email, c.name AS company_name,
+                   ar.work_date, ar.entry_time, ar.exit_time
+              FROM location_alerts la
+              JOIN users u ON u.id = la.user_id
+         LEFT JOIN companies c ON c.id = u.company_id
+              JOIN attendance_records ar ON ar.id = la.attendance_id
+             WHERE ' . implode(' AND ', $where) . '
+          ORDER BY la.triggered_at DESC
+             LIMIT 500';
+    $rows = db_all($sql, $params);
+
+    ok(['alerts' => array_map(function ($r) {
+        return [
+            'id' => (int)$r['id'],
+            'user_id' => (int)$r['user_id'],
+            'user_name' => $r['user_name'],
+            'user_email' => $r['user_email'],
+            'company_name' => $r['company_name'],
+            'attendance_id' => (int)$r['attendance_id'],
+            'work_date' => $r['work_date'],
+            'entry_time' => $r['entry_time'],
+            'exit_time' => $r['exit_time'],
+            'triggered_at' => $r['triggered_at'],
+            'reason_codes' => $r['reason_codes'],
+            'prev_country_code' => $r['prev_country_code'],
+            'prev_city' => $r['prev_city'],
+            'prev_lat' => $r['prev_lat'] !== null ? (float)$r['prev_lat'] : null,
+            'prev_lon' => $r['prev_lon'] !== null ? (float)$r['prev_lon'] : null,
+            'prev_marked_at' => $r['prev_marked_at'],
+            'curr_country_code' => $r['curr_country_code'],
+            'curr_city' => $r['curr_city'],
+            'curr_lat' => $r['curr_lat'] !== null ? (float)$r['curr_lat'] : null,
+            'curr_lon' => $r['curr_lon'] !== null ? (float)$r['curr_lon'] : null,
+            'distance_km' => $r['distance_km'] !== null ? (float)$r['distance_km'] : null,
+            'elapsed_minutes' => $r['elapsed_minutes'] !== null ? (int)$r['elapsed_minutes'] : null,
+            'implied_speed_kmh' => $r['implied_speed_kmh'] !== null ? (float)$r['implied_speed_kmh'] : null,
+            'status' => $r['status'],
+            'reviewed_by' => $r['reviewed_by'] !== null ? (int)$r['reviewed_by'] : null,
+            'reviewed_at' => $r['reviewed_at'],
+            'notes' => $r['notes'],
+        ];
+    }, $rows)]);
+}
+
+/**
+ * GET admin/location-alerts/pending-count — Conteo de alertas pendientes para la card del dashboard.
+ */
+function admin_location_alerts_pending_count(): never {
+    $admin = require_admin();
+    $where = ["la.status = 'pending'"];
+    $params = [];
+    if (($admin['role'] ?? '') !== 'super_admin') {
+        if (empty($admin['company_id'])) ok(['pending' => 0]);
+        $where[] = 'u.company_id = ?';
+        $params[] = (int)$admin['company_id'];
+    }
+    $sql = 'SELECT COUNT(*) AS c FROM location_alerts la
+              JOIN users u ON u.id = la.user_id
+             WHERE ' . implode(' AND ', $where);
+    $row = db_one($sql, $params);
+    ok(['pending' => (int)($row['c'] ?? 0)]);
+}
+
+/**
+ * POST admin/location-alerts/{id}/review — Cambia status a reviewed o dismissed.
+ * Body: { decision: 'reviewed'|'dismissed', notes?: string }.
+ */
+function admin_location_alerts_review(int $alertId, array $body): never {
+    require_csrf();
+    $admin = require_admin();
+    $decision = validate_string($body, 'decision', 1, 20);
+    if (!in_array($decision, ['reviewed', 'dismissed'], true)) {
+        err('INVALID_INPUT', 'Decision invalida.', 400, ['field' => 'decision']);
+    }
+    $notes = validate_string($body, 'notes', 0, 500, false) ?? '';
+
+    $alert = db_one(
+        'SELECT la.*, u.company_id FROM location_alerts la
+           JOIN users u ON u.id = la.user_id
+          WHERE la.id = ?',
+        [$alertId]
+    );
+    if (!$alert) err('NOT_FOUND', 'Alerta no existe.', 404);
+
+    // Tenant isolation.
+    if (($admin['role'] ?? '') !== 'super_admin') {
+        if (empty($admin['company_id']) || (int)$alert['company_id'] !== (int)$admin['company_id']) {
+            err('FORBIDDEN', 'No puedes revisar alertas de otra empresa.', 403);
+        }
+    }
+
+    if ($alert['status'] !== 'pending') {
+        err('CONFLICT', 'La alerta ya fue resuelta.', 409, ['status' => $alert['status']]);
+    }
+
+    db_exec(
+        "UPDATE location_alerts
+            SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, notes = ?
+          WHERE id = ?",
+        [$decision, (int)$admin['id'], $notes !== '' ? $notes : null, $alertId]
+    );
+    audit_log((int)$admin['id'], 'location_alert_review', [
+        'alert_id' => $alertId, 'decision' => $decision
+    ]);
+    ok(['message' => 'Alerta actualizada.', 'status' => $decision]);
+}
+
+
+/**
+ * POST admin/migrations/run — Ejecuta migraciones idempotentes desde HTTP.
+ * Solo super_admin. Usado cuando el hosting bloquea SSH y no se pueden
+ * correr scripts/migrate_*.php via CLI.
+ * Body: { name: 'location_alerts' }
+ */
+function admin_migrations_run(array $body): never {
+    require_csrf();
+    require_super_admin();
+    $name = validate_string($body, 'name', 1, 60);
+    require_once __DIR__ . '/migrations.php';
+    $log = [];
+    try {
+        if ($name === 'location_alerts') {
+            $log = run_migration_location_alerts(Database::pdo());
+        } else {
+            err('INVALID_INPUT', "Migracion desconocida: {$name}", 400, ['field' => 'name']);
+        }
+    } catch (Throwable $e) {
+        $log[] = 'ERROR: ' . $e->getMessage();
+        err('SERVER_ERROR', 'Migracion fallo. Revisa el log.', 500, ['log' => $log]);
+    }
+    audit_log((int)(current_user()['id'] ?? 0), 'migration_run', ['name' => $name]);
+    ok(['migration' => $name, 'log' => $log]);
 }

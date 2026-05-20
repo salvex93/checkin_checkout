@@ -14,7 +14,9 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/geo.php';
+require_once __DIR__ . '/geo_alerts.php';
 require_once __DIR__ . '/terms.php';
+require_once __DIR__ . '/location_alert_notifier.php';
 
 const OVERTIME_GRACE_HOUR_AM = 6;
 const STANDARD_CLOSE_HOUR = 18;
@@ -187,14 +189,21 @@ function records_clockin(array $body): never {
     $isLate = $entryMin > ($startMin + (int)$sched['grace_minutes_late']);
 
     $geo = geo_resolve_current();
+    $eval = geo_evaluate_alert(Database::pdo(), (int)$u['id'], $geo, $today . ' ' . $entryTime . ':00');
+    $alertFlag = $eval['flag'] ? 1 : 0;
+    $alertReasons = $eval['flag'] ? implode(',', $eval['reasons']) : null;
     db_exec(
         'INSERT INTO attendance_records (user_id, work_date, entry_time, timezone, client_timezone, tz_mismatch,
-                                          geo_country_code, geo_country_name, geo_ip_masked, geo_source)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                                          geo_country_code, geo_country_name, geo_city, geo_region, geo_lat, geo_lon,
+                                          geo_ip_masked, geo_source, geo_alert_flag, geo_alert_reasons)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
             $u['id'], $today, $entryTime, $sched['timezone'],
             $tzInfo['client_tz'], $tzInfo['mismatch'],
-            $geo['country_code'], $geo['country_name'], $geo['ip_masked'], $geo['source']
+            $geo['country_code'], $geo['country_name'], $geo['city'], $geo['region'],
+            $geo['lat'], $geo['lon'],
+            $geo['ip_masked'], $geo['source'],
+            $alertFlag, $alertReasons
         ]
     );
     $newId = (int)db_last_id();
@@ -202,8 +211,13 @@ function records_clockin(array $body): never {
         'date' => $today, 'tz' => $sched['timezone'],
         'client_tz' => $tzInfo['client_tz'], 'tz_mismatch' => (bool)$tzInfo['mismatch'],
         'is_late' => $isLate, 'is_workday' => $isWorkday,
-        'geo_country' => $geo['country_code']
+        'geo_country' => $geo['country_code'],
+        'geo_city' => $geo['city'],
+        'geo_alert' => $alertFlag === 1 ? $alertReasons : null
     ]);
+    if ($eval['flag']) {
+        record_location_alert(Database::pdo(), (int)$u['id'], $newId, $eval);
+    }
     $rec = db_one('SELECT * FROM attendance_records WHERE id = ?', [$newId]);
     ok([
         'record' => normalize_record($rec),
@@ -236,35 +250,56 @@ function records_clockout(array $body = []): never {
     // Si el clockout viene desde una TZ distinta a la del clockin (viajaste),
     // se respeta la TZ del navegador para exit_time pero queda marcado.
     $exitMismatch = $tzInfo['mismatch'] || ($rec['tz_mismatch'] ?? 0);
-    // Geo del clockout: si el record aun no tiene pais (registro antiguo o falla
-    // de resolucion en clockin), intentamos resolver ahora. No sobreescribimos
-    // un pais ya capturado: el dato representa el sitio donde se inicio la jornada.
-    $needGeo = empty($rec['geo_country_code']);
-    if ($needGeo) {
-        $geo = geo_resolve_current();
-        db_exec(
-            'UPDATE attendance_records
-                SET exit_time = ?, closed_reason = ?, tz_mismatch = ?,
-                    geo_country_code = COALESCE(geo_country_code, ?),
-                    geo_country_name = COALESCE(geo_country_name, ?),
-                    geo_ip_masked    = COALESCE(geo_ip_masked, ?),
-                    geo_source       = COALESCE(geo_source, ?)
-              WHERE id = ?',
-            [
-                $now, 'normal', $exitMismatch ? 1 : 0,
-                $geo['country_code'], $geo['country_name'], $geo['ip_masked'], $geo['source'],
-                $rec['id']
-            ]
-        );
-    } else {
-        db_exec(
-            'UPDATE attendance_records SET exit_time = ?, closed_reason = ?, tz_mismatch = ? WHERE id = ?',
-            [$now, 'normal', $exitMismatch ? 1 : 0, $rec['id']]
-        );
+    // Resolvemos geo del clockout SIEMPRE para guardar geo_exit_*.
+    // Si el record original no tiene pais de entrada, lo llenamos retroactivo.
+    $geo = geo_resolve_current();
+    db_exec(
+        'UPDATE attendance_records
+            SET exit_time = ?, closed_reason = ?, tz_mismatch = ?,
+                geo_country_code = COALESCE(geo_country_code, ?),
+                geo_country_name = COALESCE(geo_country_name, ?),
+                geo_city         = COALESCE(geo_city, ?),
+                geo_region       = COALESCE(geo_region, ?),
+                geo_lat          = COALESCE(geo_lat, ?),
+                geo_lon          = COALESCE(geo_lon, ?),
+                geo_ip_masked    = COALESCE(geo_ip_masked, ?),
+                geo_source       = COALESCE(geo_source, ?),
+                geo_exit_country_code = ?,
+                geo_exit_city         = ?,
+                geo_exit_lat          = ?,
+                geo_exit_lon          = ?
+          WHERE id = ?',
+        [
+            $now, 'normal', $exitMismatch ? 1 : 0,
+            $geo['country_code'], $geo['country_name'], $geo['city'], $geo['region'],
+            $geo['lat'], $geo['lon'], $geo['ip_masked'], $geo['source'],
+            $geo['country_code'], $geo['city'], $geo['lat'], $geo['lon'],
+            $rec['id']
+        ]
+    );
+    // Evaluacion de alerta en salida: solo si tenemos coords actuales y diferentes al clockin.
+    $exitEval = ['flag' => false, 'reasons' => [], 'context' => []];
+    if (($geo['source'] ?? null) === 'ip' && !empty($geo['country_code'])) {
+        $exitEval = geo_evaluate_alert(Database::pdo(), (int)$u['id'], $geo, $today . ' ' . $now . ':00');
+        if ($exitEval['flag']) {
+            $existingReasons = $rec['geo_alert_reasons'] ?? null;
+            $merged = array_unique(array_filter(array_merge(
+                $existingReasons ? explode(',', $existingReasons) : [],
+                $exitEval['reasons']
+            )));
+            db_exec(
+                'UPDATE attendance_records SET geo_alert_flag = 1, geo_alert_reasons = ? WHERE id = ?',
+                [implode(',', $merged), $rec['id']]
+            );
+            record_location_alert(Database::pdo(), (int)$u['id'], (int)$rec['id'], $exitEval);
+        }
     }
     audit_log((int)$u['id'], 'clockout', [
         'date' => $today, 'tz' => $sched['timezone'],
-        'client_tz' => $tzInfo['client_tz'], 'tz_mismatch' => (bool)$tzInfo['mismatch']
+        'client_tz' => $tzInfo['client_tz'], 'tz_mismatch' => (bool)$tzInfo['mismatch'],
+        'geo_exit_country' => $geo['country_code'],
+        'geo_exit_city' => $geo['city'],
+        'geo_exit_alert' => $exitEval['flag'] ? implode(',', $exitEval['reasons']) : null
     ]);
     $rec = db_one('SELECT * FROM attendance_records WHERE id = ?', [$rec['id']]);
     ok(['record' => normalize_record($rec)]);
@@ -460,6 +495,12 @@ function normalize_record(array $r): array {
         'overtime_status' => $r['overtime_status'],
         'geo_country_code' => $r['geo_country_code'] ?? null,
         'geo_country_name' => $r['geo_country_name'] ?? null,
+        'geo_city' => $r['geo_city'] ?? null,
+        'geo_region' => $r['geo_region'] ?? null,
         'geo_source' => $r['geo_source'] ?? null,
+        'geo_alert_flag' => isset($r['geo_alert_flag']) ? (bool)$r['geo_alert_flag'] : false,
+        'geo_alert_reasons' => $r['geo_alert_reasons'] ?? null,
+        'geo_exit_country_code' => $r['geo_exit_country_code'] ?? null,
+        'geo_exit_city' => $r['geo_exit_city'] ?? null,
     ];
 }

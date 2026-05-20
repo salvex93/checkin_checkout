@@ -66,3 +66,5 @@ deploy/
 # Scripts de deploy con credenciales en claro
 scripts/deploy_index.sh
 scripts/deploy_*.sh
+scripts/_sftp_*.sh
+scripts/_ssh_*.sh

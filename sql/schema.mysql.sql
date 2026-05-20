@@ -143,11 +143,22 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     overtime_status ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',
     geo_country_code CHAR(2) NULL,
     geo_country_name VARCHAR(80) NULL,
+    geo_city VARCHAR(120) NULL,
+    geo_region VARCHAR(120) NULL,
+    geo_lat DECIMAL(9,6) NULL,
+    geo_lon DECIMAL(9,6) NULL,
     geo_ip_masked VARCHAR(45) NULL,
     geo_source VARCHAR(10) NULL,
+    geo_alert_flag TINYINT(1) NOT NULL DEFAULT 0,
+    geo_alert_reasons VARCHAR(200) NULL,
+    geo_exit_country_code CHAR(2) NULL,
+    geo_exit_city VARCHAR(120) NULL,
+    geo_exit_lat DECIMAL(9,6) NULL,
+    geo_exit_lon DECIMAL(9,6) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_user_date (user_id, work_date),
     INDEX idx_records_user (user_id),
+    INDEX idx_records_alert (geo_alert_flag),
     CONSTRAINT fk_records_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -222,10 +233,39 @@ CREATE TABLE IF NOT EXISTS audit_log (
     INDEX idx_audit_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS location_alerts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    attendance_id INT NOT NULL,
+    triggered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    reason_codes VARCHAR(200) NOT NULL,
+    prev_country_code CHAR(2) NULL,
+    prev_city VARCHAR(120) NULL,
+    prev_lat DECIMAL(9,6) NULL,
+    prev_lon DECIMAL(9,6) NULL,
+    prev_marked_at DATETIME NULL,
+    curr_country_code CHAR(2) NULL,
+    curr_city VARCHAR(120) NULL,
+    curr_lat DECIMAL(9,6) NULL,
+    curr_lon DECIMAL(9,6) NULL,
+    distance_km DECIMAL(10,2) NULL,
+    elapsed_minutes INT NULL,
+    implied_speed_kmh DECIMAL(10,2) NULL,
+    status ENUM('pending','reviewed','dismissed') NOT NULL DEFAULT 'pending',
+    reviewed_by INT NULL,
+    reviewed_at DATETIME NULL,
+    notes TEXT NULL,
+    INDEX idx_locales_status (status, triggered_at),
+    INDEX idx_locales_user (user_id),
+    CONSTRAINT fk_locales_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_locales_attendance FOREIGN KEY (attendance_id) REFERENCES attendance_records(id) ON DELETE CASCADE,
+    CONSTRAINT fk_locales_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS email_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
     brand_id INT NOT NULL,
-    kind ENUM('invitation','password_reset','admin_disabled','admin_delete_receipt') NOT NULL,
+    kind ENUM('invitation','password_reset','admin_disabled','admin_delete_receipt','location_alert') NOT NULL,
     subject VARCHAR(200) NOT NULL,
     intro_html TEXT NOT NULL,
     cta_label VARCHAR(80) NULL,

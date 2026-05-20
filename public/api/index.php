@@ -78,6 +78,10 @@ if (preg_match('#^admin/email-templates/(\d+)/([a-z_]+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
+} elseif (preg_match('#^(admin/location-alerts)/(\d+)/(review)$#', $endpoint, $m)) {
+    $endpointBase = $m[1];
+    $endpointId = (int)$m[2];
+    $endpointAction = $m[3];
 } elseif (preg_match('#^(admin/companies|admin/users|admin/brands|admin/dashboard/company)/(\d+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
@@ -114,6 +118,9 @@ try {
                 return;
             case 'POST admin/users/resend-invite':
                 admin_users_resend_invite($endpointId);
+                return;
+            case 'POST admin/location-alerts/review':
+                admin_location_alerts_review($endpointId, $body);
                 return;
             default:
                 err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
@@ -260,6 +267,12 @@ try {
             admin_email_templates_list();
         case 'POST admin/email-templates/preview':
             admin_email_templates_preview($body);
+
+        // --- Admin: alertas de ubicacion (cambios radicales) ---
+        case 'GET admin/location-alerts':
+            admin_location_alerts_list();
+        case 'GET admin/location-alerts/pending-count':
+            admin_location_alerts_pending_count();
 
         // --- Admin: dashboards y busqueda (Fase 5) ---
         case 'GET admin/dashboard/global':
