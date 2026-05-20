@@ -11,6 +11,7 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/terms.php';
 
 const PASSWORD_RESET_TTL_HOURS = 72;
 
@@ -75,6 +76,8 @@ function auth_login(array $body): never {
         db_exec('UPDATE users SET password_hash = ? WHERE id = ?', [$newHash, (int)$user['id']]);
     }
 
+    $termsPending = !user_has_accepted_active_terms((int)$user['id']);
+    $activeTerms = terms_active_version();
     ok([
         'user' => [
             'id' => (int)$user['id'],
@@ -89,7 +92,9 @@ function auth_login(array $body): never {
             'brand_logo_url' => $user['brand_logo_url'] ?? null,
             'brand_primary_color' => $user['brand_primary_color'] ?? null,
             'brand_secondary_color' => $user['brand_secondary_color'] ?? null,
-            'must_change_password' => (int)$user['must_change_password'] === 1
+            'must_change_password' => (int)$user['must_change_password'] === 1,
+            'terms_pending' => $termsPending,
+            'terms_version' => $activeTerms['version'] ?? null,
         ],
         'csrf_token' => csrf_token()
     ]);
@@ -129,6 +134,8 @@ function auth_me(): never {
           WHERE u.id = ?',
         [$u['id']]
     );
+    $termsPending = !user_has_accepted_active_terms((int)$u['id']);
+    $activeTerms = terms_active_version();
     ok([
         'user' => [
             'id' => (int)$u['id'],
@@ -143,7 +150,9 @@ function auth_me(): never {
             'brand_logo_url' => $row['brand_logo_url'] ?? null,
             'brand_primary_color' => $row['brand_primary_color'] ?? null,
             'brand_secondary_color' => $row['brand_secondary_color'] ?? null,
-            'must_change_password' => $row ? (int)$row['must_change_password'] === 1 : false
+            'must_change_password' => $row ? (int)$row['must_change_password'] === 1 : false,
+            'terms_pending' => $termsPending,
+            'terms_version' => $activeTerms['version'] ?? null,
         ],
         'csrf_token' => csrf_token()
     ]);

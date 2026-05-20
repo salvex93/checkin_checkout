@@ -13,6 +13,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/geo.php';
+require_once __DIR__ . '/terms.php';
 
 const OVERTIME_GRACE_HOUR_AM = 6;
 const STANDARD_CLOSE_HOUR = 18;
@@ -128,6 +130,7 @@ function records_mine(): never {
 function records_clockin(array $body): never {
     require_csrf();
     $u = require_no_pending_password();
+    require_terms_accepted($u);
     require_company_for_clock($u);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
@@ -183,15 +186,23 @@ function records_clockin(array $body): never {
     $entryMin = $now->format('G') * 60 + (int)$now->format('i');
     $isLate = $entryMin > ($startMin + (int)$sched['grace_minutes_late']);
 
+    $geo = geo_resolve_current();
     db_exec(
-        'INSERT INTO attendance_records (user_id, work_date, entry_time, timezone, client_timezone, tz_mismatch) VALUES (?, ?, ?, ?, ?, ?)',
-        [$u['id'], $today, $entryTime, $sched['timezone'], $tzInfo['client_tz'], $tzInfo['mismatch']]
+        'INSERT INTO attendance_records (user_id, work_date, entry_time, timezone, client_timezone, tz_mismatch,
+                                          geo_country_code, geo_country_name, geo_ip_masked, geo_source)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+            $u['id'], $today, $entryTime, $sched['timezone'],
+            $tzInfo['client_tz'], $tzInfo['mismatch'],
+            $geo['country_code'], $geo['country_name'], $geo['ip_masked'], $geo['source']
+        ]
     );
     $newId = (int)db_last_id();
     audit_log((int)$u['id'], 'clockin', [
         'date' => $today, 'tz' => $sched['timezone'],
         'client_tz' => $tzInfo['client_tz'], 'tz_mismatch' => (bool)$tzInfo['mismatch'],
-        'is_late' => $isLate, 'is_workday' => $isWorkday
+        'is_late' => $isLate, 'is_workday' => $isWorkday,
+        'geo_country' => $geo['country_code']
     ]);
     $rec = db_one('SELECT * FROM attendance_records WHERE id = ?', [$newId]);
     ok([
@@ -207,6 +218,7 @@ function records_clockin(array $body): never {
 function records_clockout(array $body = []): never {
     require_csrf();
     $u = require_no_pending_password();
+    require_terms_accepted($u);
     require_company_for_clock($u);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
@@ -224,10 +236,32 @@ function records_clockout(array $body = []): never {
     // Si el clockout viene desde una TZ distinta a la del clockin (viajaste),
     // se respeta la TZ del navegador para exit_time pero queda marcado.
     $exitMismatch = $tzInfo['mismatch'] || ($rec['tz_mismatch'] ?? 0);
-    db_exec(
-        'UPDATE attendance_records SET exit_time = ?, closed_reason = ?, tz_mismatch = ? WHERE id = ?',
-        [$now, 'normal', $exitMismatch ? 1 : 0, $rec['id']]
-    );
+    // Geo del clockout: si el record aun no tiene pais (registro antiguo o falla
+    // de resolucion en clockin), intentamos resolver ahora. No sobreescribimos
+    // un pais ya capturado: el dato representa el sitio donde se inicio la jornada.
+    $needGeo = empty($rec['geo_country_code']);
+    if ($needGeo) {
+        $geo = geo_resolve_current();
+        db_exec(
+            'UPDATE attendance_records
+                SET exit_time = ?, closed_reason = ?, tz_mismatch = ?,
+                    geo_country_code = COALESCE(geo_country_code, ?),
+                    geo_country_name = COALESCE(geo_country_name, ?),
+                    geo_ip_masked    = COALESCE(geo_ip_masked, ?),
+                    geo_source       = COALESCE(geo_source, ?)
+              WHERE id = ?',
+            [
+                $now, 'normal', $exitMismatch ? 1 : 0,
+                $geo['country_code'], $geo['country_name'], $geo['ip_masked'], $geo['source'],
+                $rec['id']
+            ]
+        );
+    } else {
+        db_exec(
+            'UPDATE attendance_records SET exit_time = ?, closed_reason = ?, tz_mismatch = ? WHERE id = ?',
+            [$now, 'normal', $exitMismatch ? 1 : 0, $rec['id']]
+        );
+    }
     audit_log((int)$u['id'], 'clockout', [
         'date' => $today, 'tz' => $sched['timezone'],
         'client_tz' => $tzInfo['client_tz'], 'tz_mismatch' => (bool)$tzInfo['mismatch']
@@ -239,6 +273,7 @@ function records_clockout(array $body = []): never {
 function records_overtime(array $body): never {
     require_csrf();
     $u = require_no_pending_password();
+    require_terms_accepted($u);
     $hours = validate_float($body, 'hours', 0.5, OVERTIME_MAX_HOURS);
     $reason = validate_string($body, 'reason', 0, 240, false) ?? '';
 
@@ -279,17 +314,23 @@ function records_overtime(array $body): never {
         err('OVERTIME_EXISTS', $msg, 409, ['existing_id' => (int)$existing['id'], 'existing_status' => $existing['status']]);
     }
 
+    $geo = geo_resolve_current();
     db_exec(
-        "INSERT INTO overtime_requests (user_id, record_id, hours, reason, status, request_type)
-              VALUES (?, ?, ?, ?, 'pending', 'new')",
-        [$u['id'], $rec['id'], $hours, $reason]
+        "INSERT INTO overtime_requests (user_id, record_id, hours, reason, status, request_type,
+                                         geo_country_code, geo_country_name, geo_ip_masked, geo_source)
+              VALUES (?, ?, ?, ?, 'pending', 'new', ?, ?, ?, ?)",
+        [
+            $u['id'], $rec['id'], $hours, $reason,
+            $geo['country_code'], $geo['country_name'], $geo['ip_masked'], $geo['source']
+        ]
     );
     db_exec(
         'UPDATE attendance_records SET overtime_hours = overtime_hours + ?, overtime_status = ? WHERE id = ?',
         [$hours, 'pending', $rec['id']]
     );
     audit_log((int)$u['id'], 'overtime_request', [
-        'hours' => $hours, 'record_id' => (int)$rec['id'], 'work_date' => $workDate
+        'hours' => $hours, 'record_id' => (int)$rec['id'], 'work_date' => $workDate,
+        'geo_country' => $geo['country_code']
     ]);
     ok(['message' => 'Horas extra enviadas a aprobacion.']);
 }
@@ -335,6 +376,7 @@ function records_change_company(array $body): never {
 function records_overtime_edit_request(array $body): never {
     require_csrf();
     $u = require_no_pending_password();
+    require_terms_accepted($u);
 
     $refId = validate_int($body, 'overtime_request_id', 1);
     $newHours = validate_float($body, 'new_hours', 0.5, OVERTIME_MAX_HOURS);
@@ -362,10 +404,15 @@ function records_overtime_edit_request(array $body): never {
         err('OVERTIME_EDIT_EXISTS', 'Ya tienes una edicion pendiente para esa solicitud.', 409, ['existing_id' => (int)$pending['id']]);
     }
 
+    $geo = geo_resolve_current();
     db_exec(
-        "INSERT INTO overtime_requests (user_id, record_id, hours, new_hours, reason, status, request_type, referenced_request_id)
-              VALUES (?, ?, ?, ?, ?, 'pending', 'edit', ?)",
-        [$u['id'], $original['record_id'], $original['hours'], $newHours, $reason, $refId]
+        "INSERT INTO overtime_requests (user_id, record_id, hours, new_hours, reason, status, request_type, referenced_request_id,
+                                         geo_country_code, geo_country_name, geo_ip_masked, geo_source)
+              VALUES (?, ?, ?, ?, ?, 'pending', 'edit', ?, ?, ?, ?, ?)",
+        [
+            $u['id'], $original['record_id'], $original['hours'], $newHours, $reason, $refId,
+            $geo['country_code'], $geo['country_name'], $geo['ip_masked'], $geo['source']
+        ]
     );
     audit_log((int)$u['id'], 'overtime_edit_request', [
         'reference_id' => $refId, 'old_hours' => (float)$original['hours'], 'new_hours' => $newHours
@@ -410,6 +457,9 @@ function normalize_record(array $r): array {
         'tz_mismatch' => isset($r['tz_mismatch']) ? (bool)$r['tz_mismatch'] : false,
         'closed_reason' => $r['closed_reason'],
         'overtime_hours' => (float)$r['overtime_hours'],
-        'overtime_status' => $r['overtime_status']
+        'overtime_status' => $r['overtime_status'],
+        'geo_country_code' => $r['geo_country_code'] ?? null,
+        'geo_country_name' => $r['geo_country_name'] ?? null,
+        'geo_source' => $r['geo_source'] ?? null,
     ];
 }

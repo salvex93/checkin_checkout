@@ -141,6 +141,10 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     closed_reason ENUM('normal','forgotten','overtime') NULL,
     overtime_hours DECIMAL(3,1) NOT NULL DEFAULT 0,
     overtime_status ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',
+    geo_country_code CHAR(2) NULL,
+    geo_country_name VARCHAR(80) NULL,
+    geo_ip_masked VARCHAR(45) NULL,
+    geo_source VARCHAR(10) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_user_date (user_id, work_date),
     INDEX idx_records_user (user_id),
@@ -170,6 +174,10 @@ CREATE TABLE IF NOT EXISTS overtime_requests (
     request_type ENUM('new','edit') NOT NULL DEFAULT 'new',
     referenced_request_id INT NULL,
     new_hours DECIMAL(3,1) NULL,
+    geo_country_code CHAR(2) NULL,
+    geo_country_name VARCHAR(80) NULL,
+    geo_ip_masked VARCHAR(45) NULL,
+    geo_source VARCHAR(10) NULL,
     requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     resolved_at DATETIME NULL,
     INDEX idx_otreq_status (status),
@@ -177,6 +185,29 @@ CREATE TABLE IF NOT EXISTS overtime_requests (
     CONSTRAINT fk_otreq_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_otreq_record FOREIGN KEY (record_id) REFERENCES attendance_records(id) ON DELETE CASCADE,
     CONSTRAINT fk_otreq_ref FOREIGN KEY (referenced_request_id) REFERENCES overtime_requests(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS terms_versions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    version VARCHAR(20) NOT NULL UNIQUE,
+    title VARCHAR(200) NOT NULL,
+    body_html LONGTEXT NOT NULL,
+    privacy_html LONGTEXT NOT NULL,
+    published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_active TINYINT(1) NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_terms_acceptance (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    terms_version_id INT NOT NULL,
+    accepted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(45) NULL,
+    user_agent VARCHAR(255) NULL,
+    UNIQUE KEY uq_user_version (user_id, terms_version_id),
+    INDEX idx_uta_user (user_id),
+    CONSTRAINT fk_uta_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_uta_version FOREIGN KEY (terms_version_id) REFERENCES terms_versions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS audit_log (

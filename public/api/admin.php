@@ -37,7 +37,10 @@ function admin_records(): never {
             'tz_mismatch' => isset($r['tz_mismatch']) ? (bool)$r['tz_mismatch'] : false,
             'closed_reason' => $r['closed_reason'],
             'overtime_hours' => (float)$r['overtime_hours'],
-            'overtime_status' => $r['overtime_status']
+            'overtime_status' => $r['overtime_status'],
+            'geo_country_code' => $r['geo_country_code'] ?? null,
+            'geo_country_name' => $r['geo_country_name'] ?? null,
+            'geo_source' => $r['geo_source'] ?? null,
         ];
     }, $rows)]);
 }

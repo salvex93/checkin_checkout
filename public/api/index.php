@@ -23,6 +23,7 @@ require_once __DIR__ . '/admin.php';
 require_once __DIR__ . '/dashboard.php';
 require_once __DIR__ . '/tenant.php';
 require_once __DIR__ . '/billing.php';
+require_once __DIR__ . '/terms.php';
 
 // Headers de seguridad antes que nada
 emit_security_headers();
@@ -160,6 +161,16 @@ try {
         // --- Branding (publico, pre-login) ---
         case 'GET branding':
             tenant_public_branding();
+
+        // --- Terminos y Condiciones ---
+        case 'GET terms/current':
+            terms_current();
+        case 'POST terms/accept':
+            terms_accept($body);
+        case 'GET admin/terms':
+            admin_terms_list();
+        case 'POST admin/terms':
+            admin_terms_create($body);
 
         // --- Auth ---
         // auth/register deprecado: alta de usuarios ahora va por admin/users/invite (#26).

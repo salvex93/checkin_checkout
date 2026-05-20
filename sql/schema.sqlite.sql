@@ -138,6 +138,10 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     closed_reason TEXT NULL CHECK (closed_reason IN ('normal','forgotten','overtime') OR closed_reason IS NULL),
     overtime_hours REAL NOT NULL DEFAULT 0,
     overtime_status TEXT NOT NULL DEFAULT 'none' CHECK (overtime_status IN ('none','pending','approved','rejected')),
+    geo_country_code TEXT NULL,
+    geo_country_name TEXT NULL,
+    geo_ip_masked TEXT NULL,
+    geo_source TEXT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id, work_date),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -169,12 +173,40 @@ CREATE TABLE IF NOT EXISTS overtime_requests (
     request_type TEXT NOT NULL DEFAULT 'new' CHECK (request_type IN ('new','edit')),
     referenced_request_id INTEGER NULL,
     new_hours REAL NULL,
+    geo_country_code TEXT NULL,
+    geo_country_name TEXT NULL,
+    geo_ip_masked TEXT NULL,
+    geo_source TEXT NULL,
     requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
     resolved_at TEXT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (record_id) REFERENCES attendance_records(id) ON DELETE CASCADE,
     FOREIGN KEY (referenced_request_id) REFERENCES overtime_requests(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS terms_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    privacy_html TEXT NOT NULL,
+    published_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    is_active INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS user_terms_acceptance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    terms_version_id INTEGER NOT NULL,
+    accepted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    ip_address TEXT NULL,
+    user_agent TEXT NULL,
+    UNIQUE (user_id, terms_version_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (terms_version_id) REFERENCES terms_versions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_uta_user ON user_terms_acceptance(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_otreq_status ON overtime_requests(status);
 CREATE INDEX IF NOT EXISTS idx_otreq_type ON overtime_requests(request_type);

@@ -580,6 +580,8 @@
                             setCurrentUser(me.user);
                             if (me.user.must_change_password) {
                                 setView('change-password');
+                            } else if (me.user.terms_pending) {
+                                setView('accept-terms');
                             } else {
                                 const saved = readNavState().view;
                                 const canResumeAdmin = me.user.role === 'admin' || me.user.role === 'super_admin';
@@ -616,6 +618,8 @@
                     setCurrentUser(d.user);
                     if (d.user.must_change_password) {
                         setView('change-password');
+                    } else if (d.user.terms_pending) {
+                        setView('accept-terms');
                     } else {
                         setView('dashboard');
                     }
@@ -671,6 +675,23 @@
                         />
                     )}
 
+                    {view === 'accept-terms' && currentUser && (
+                        <AcceptTermsCard
+                            currentUser={currentUser}
+                            onAccepted={async () => {
+                                try {
+                                    const me = await apiFetch('auth/me');
+                                    CSRF_TOKEN = me.csrf_token || CSRF_TOKEN;
+                                    setCurrentUser(me.user);
+                                    setView('dashboard');
+                                } catch (_) { setView('login'); }
+                            }}
+                            onLogout={handleLogout}
+                            theme={theme}
+                            onToggleTheme={toggleTheme}
+                        />
+                    )}
+
                     {view === 'change-password' && currentUser && (
                         <ChangePasswordCard
                             currentUser={currentUser}
@@ -679,7 +700,7 @@
                                     const me = await apiFetch('auth/me');
                                     CSRF_TOKEN = me.csrf_token || CSRF_TOKEN;
                                     setCurrentUser(me.user);
-                                    setView('dashboard');
+                                    setView(me.user.terms_pending ? 'accept-terms' : 'dashboard');
                                 } catch (_) { setView('login'); }
                             }}
                             onLogout={handleLogout}
@@ -725,6 +746,90 @@
         // =====================================================================
         // Vistas
         // =====================================================================
+
+        const AcceptTermsCard = ({ currentUser, onAccepted, onLogout, theme, onToggleTheme }) => {
+            const [terms, setTerms] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [accepting, setAccepting] = useState(false);
+            const [agreed, setAgreed] = useState(false);
+
+            useEffect(() => {
+                (async () => {
+                    try {
+                        const d = await apiFetch('terms/current');
+                        setTerms(d.terms);
+                    } catch (e) {
+                        toast('error', e.message || 'No se pudieron cargar los terminos.');
+                    } finally { setLoading(false); }
+                })();
+            }, []);
+
+            const handleAccept = async () => {
+                if (!agreed || accepting || !terms) return;
+                setAccepting(true);
+                try {
+                    await apiPost('terms/accept', { version: terms.version });
+                    toast('success', 'Terminos aceptados.');
+                    onAccepted();
+                } catch (e) {
+                    toast('error', e.message || 'No se pudo registrar la aceptacion.');
+                } finally { setAccepting(false); }
+            };
+
+            return (
+                <div className="max-w-3xl w-full bg-white dark:bg-slate-900 p-6 sm:p-10 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 relative">
+                    <div className="absolute top-4 right-4"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
+                    <h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 font-display">
+                        {terms?.title || 'Terminos y Condiciones'}
+                    </h2>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                        Hola {currentUser?.name?.split(' ')[0] || ''}. Antes de continuar debes leer y aceptar los siguientes terminos y el aviso de privacidad. Tu aceptacion queda registrada con fecha, IP y pais.
+                    </p>
+
+                    {loading ? (
+                        <p className="text-slate-500">Cargando...</p>
+                    ) : !terms ? (
+                        <p className="text-amber-600 dark:text-amber-400">No hay terminos publicados. Contacta al administrador.</p>
+                    ) : (
+                        <>
+                            <div className="max-h-[50vh] overflow-y-auto pr-2 mb-6 border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-slate-50 dark:bg-slate-800/50">
+                                <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: terms.body_html }} />
+                                <hr className="my-6 border-slate-200 dark:border-slate-700" />
+                                <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: terms.privacy_html }} />
+                            </div>
+
+                            <label className="flex items-start gap-3 cursor-pointer mb-6">
+                                <input
+                                    type="checkbox"
+                                    checked={agreed}
+                                    onChange={e => setAgreed(e.target.checked)}
+                                    className="mt-1 w-5 h-5 rounded border-slate-300"
+                                />
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">
+                                    He leido y acepto los Terminos de Uso y el Aviso de Privacidad (version {terms.version}).
+                                </span>
+                            </label>
+
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <button
+                                    onClick={handleAccept}
+                                    disabled={!agreed || accepting}
+                                    className="btn-melius px-6 py-3 rounded-xl text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {accepting ? 'Registrando...' : 'Aceptar y continuar'}
+                                </button>
+                                <button
+                                    onClick={onLogout}
+                                    className="px-6 py-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
+                                >
+                                    Cerrar sesion
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        };
 
         const LoginCard = ({ onSubmit, submitting, onGoForgot, theme, onToggleTheme }) => (
             <div className="max-w-md w-full bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-12 rounded-[2rem] sm:rounded-[3rem] md:rounded-[4rem] shadow-2xl dark:shadow-black/50 border border-slate-100 dark:border-slate-800 flex flex-col items-center anim-zoom-in relative">
@@ -4112,6 +4217,19 @@
             );
         };
 
+        const GeoBadge = ({ rec }) => {
+            const code = rec.geo_country_code;
+            if (!code) return null;
+            const name = rec.geo_country_name || code;
+            return (
+                <span
+                    title={`Marco desde ${name} (IP)`}
+                    className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 cursor-help">
+                    {code}
+                </span>
+            );
+        };
+
         const AdminRecordRow = ({ rec }) => {
             const stateLabel = rec.exit_time
                 ? (rec.closed_reason === 'forgotten' ? 'OLVIDO 18:00' : rec.closed_reason === 'overtime' ? 'EXTRA' : 'COMPLETO')
@@ -4126,7 +4244,7 @@
                     <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{rec.user_name}</td>
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{rec.company_name || '—'}</td>
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium">
-                        {rec.work_date}<TzMismatchBadge rec={rec} />
+                        {rec.work_date}<TzMismatchBadge rec={rec} /><GeoBadge rec={rec} />
                     </td>
                     <td className="px-6 py-4 font-mono font-bold text-blue-600 dark:text-blue-400">{rec.entry_time}</td>
                     <td className="px-6 py-4 font-mono font-bold text-orange-600 dark:text-orange-400">{rec.exit_time || '--:--'}</td>
@@ -4144,7 +4262,7 @@
                         <p className="text-xs text-slate-500 dark:text-slate-400">{rec.company_name || 'Sin empresa'}</p>
                     </div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        {rec.work_date}<TzMismatchBadge rec={rec} />
+                        {rec.work_date}<TzMismatchBadge rec={rec} /><GeoBadge rec={rec} />
                     </span>
                 </div>
                 <div className="flex gap-3 text-sm">
