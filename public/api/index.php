@@ -274,6 +274,10 @@ try {
         case 'GET admin/location-alerts/pending-count':
             admin_location_alerts_pending_count();
 
+        // --- Admin: ejecucion de migraciones via HTTP (super_admin) ---
+        case 'POST admin/migrations/run':
+            admin_migrations_run($body);
+
         // --- Admin: dashboards y busqueda (Fase 5) ---
         case 'GET admin/dashboard/global':
             admin_dashboard_global();
