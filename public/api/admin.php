@@ -683,13 +683,27 @@ function admin_users_create_invited(string $email, string $name, string $role, ?
     $tempPassword = password_temp_generate(14);
     $hash = password_hash($tempPassword, PASSWORD_BCRYPT, ['cost' => 12]);
 
+    $piiColsSelect = pii_columns_select();
+    $hasPiiCols = $piiColsSelect !== '';
+    $emailEnc = $hasPiiCols ? pii_encrypt($email) : null;
+    $emailHash = $hasPiiCols ? pii_hash($email) : null;
+    $nameEnc = $hasPiiCols ? pii_encrypt($name) : null;
+
     Database::pdo()->beginTransaction();
     try {
-        db_exec(
-            'INSERT INTO users (email, name, password_hash, role, company_id, status, is_active, must_change_password)
-                  VALUES (?, ?, ?, ?, ?, ?, 1, 1)',
-            [$email, $name, $hash, $role, $companyId, 'active']
-        );
+        if ($hasPiiCols) {
+            db_exec(
+                'INSERT INTO users (email, name, email_enc, email_hash, full_name_enc, password_hash, role, company_id, status, is_active, must_change_password)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)',
+                [$email, $name, $emailEnc, $emailHash, $nameEnc, $hash, $role, $companyId, 'active']
+            );
+        } else {
+            db_exec(
+                'INSERT INTO users (email, name, password_hash, role, company_id, status, is_active, must_change_password)
+                      VALUES (?, ?, ?, ?, ?, ?, 1, 1)',
+                [$email, $name, $hash, $role, $companyId, 'active']
+            );
+        }
         $userId = (int)db_last_id();
         Database::pdo()->commit();
     } catch (Throwable $e) {
@@ -786,7 +800,7 @@ function admin_users_invite(array $body): never {
     // Anti-enumeracion: si el email ya existe no creamos pero respondemos OK.
     // Para evitar timing-leak, simulamos el costo del flujo real (bcrypt + sleep
     // aleatorio comparable al envio SMTP) antes de responder.
-    $existing = db_one('SELECT id FROM users WHERE email = ?', [$email]);
+    $existing = db_user_by_email($email, 'id');
     if ($existing) {
         // bcrypt dummy: mismo costo que el flujo de alta real (cost 12).
         password_hash('dummy-' . random_bytes(8), PASSWORD_BCRYPT, ['cost' => 12]);
@@ -1079,7 +1093,7 @@ function admin_users_bulk_invite(array $body): never {
             $failed[] = ['row' => $rowNum, 'email' => $email, 'reason' => "company_id {$companyId} no existe"];
             continue;
         }
-        if (db_one('SELECT id FROM users WHERE email = ?', [$email])) {
+        if (db_user_by_email($email, 'id')) {
             $skipped[] = ['row' => $rowNum, 'email' => $email, 'reason' => 'email ya existe'];
             continue;
         }
@@ -1565,6 +1579,10 @@ function admin_migrations_run(array $body): never {
     try {
         if ($name === 'location_alerts') {
             $log = run_migration_location_alerts(Database::pdo());
+        } elseif ($name === 'pii_encryption') {
+            $log = run_migration_pii_encryption(Database::pdo());
+        } elseif ($name === 'pii_backfill') {
+            $log = run_backfill_pii_encryption(Database::pdo());
         } else {
             err('INVALID_INPUT', "Migracion desconocida: {$name}", 400, ['field' => 'name']);
         }

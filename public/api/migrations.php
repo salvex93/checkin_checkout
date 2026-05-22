@@ -159,6 +159,90 @@ function add_mysql_index_safe(PDO $pdo, string $table, string $indexName, string
     return "+ indice {$table}.{$indexName}";
 }
 
+/**
+ * Migracion idempotente para columnas de PII cifrada en users.
+ * Agrega email_enc, email_hash y full_name_enc sin tocar email/name vigentes.
+ */
+function run_migration_pii_encryption(PDO $pdo): array {
+    $log = [];
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    $log[] = "driver: {$driver}";
+    if ($driver === 'sqlite') {
+        $log[] = add_sqlite_column_safe($pdo, 'users', 'email_enc', 'TEXT NULL');
+        $log[] = add_sqlite_column_safe($pdo, 'users', 'email_hash', 'TEXT NULL');
+        $log[] = add_sqlite_column_safe($pdo, 'users', 'full_name_enc', 'TEXT NULL');
+        $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_hash ON users(email_hash)");
+        $log[] = '+ indice unico idx_users_email_hash asegurado';
+    } elseif ($driver === 'mysql') {
+        $log[] = add_mysql_column_safe($pdo, 'users', 'email_enc', 'TEXT NULL');
+        $log[] = add_mysql_column_safe($pdo, 'users', 'email_hash', 'VARCHAR(64) NULL');
+        $log[] = add_mysql_column_safe($pdo, 'users', 'full_name_enc', 'TEXT NULL');
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = 'idx_users_email_hash'");
+        $stmt->execute();
+        if ((int)$stmt->fetchColumn() === 0) {
+            $pdo->exec("CREATE UNIQUE INDEX idx_users_email_hash ON users(email_hash)");
+            $log[] = '+ indice unico idx_users_email_hash';
+        } else {
+            $log[] = '= indice idx_users_email_hash';
+        }
+    } else {
+        $log[] = "ERROR: driver no soportado";
+        return $log;
+    }
+    $log[] = 'OK';
+    return $log;
+}
+
+/**
+ * Backfill de PII cifrada. Itera usuarios con email_hash NULL y los completa.
+ * Lotes de 100 con commit/rollback por lote.
+ */
+function run_backfill_pii_encryption(PDO $pdo): array {
+    require_once __DIR__ . '/crypto.php';
+    $log = [];
+    try {
+        $pdo->query("SELECT email_hash FROM users LIMIT 1");
+    } catch (Throwable $e) {
+        $log[] = 'ERROR: columna email_hash inexistente; corre primero migration=pii_encryption';
+        return $log;
+    }
+    $total = (int)$pdo->query("SELECT COUNT(*) AS c FROM users WHERE email_hash IS NULL OR email_hash = ''")->fetch(PDO::FETCH_ASSOC)['c'];
+    $log[] = "pendientes: {$total}";
+    if ($total === 0) { $log[] = 'OK (nada que hacer)'; return $log; }
+
+    $batchSize = 100;
+    $processed = 0;
+    $errors = 0;
+    while (true) {
+        $rows = $pdo->query("SELECT id, email, name FROM users WHERE email_hash IS NULL OR email_hash = '' LIMIT {$batchSize}")->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) break;
+        $pdo->beginTransaction();
+        try {
+            $upd = $pdo->prepare("UPDATE users SET email_enc = ?, email_hash = ?, full_name_enc = ? WHERE id = ?");
+            foreach ($rows as $r) {
+                $email = (string)($r['email'] ?? '');
+                $name  = (string)($r['name'] ?? '');
+                if ($email === '') { $errors++; continue; }
+                $upd->execute([
+                    pii_encrypt($email),
+                    pii_hash($email),
+                    $name !== '' ? pii_encrypt($name) : null,
+                    (int)$r['id'],
+                ]);
+                $processed++;
+            }
+            $pdo->commit();
+            $log[] = "lote OK: {$processed}/{$total}";
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            $log[] = 'ERROR en lote: ' . $e->getMessage();
+            return $log;
+        }
+    }
+    $log[] = "DONE procesados={$processed} errores={$errors}";
+    return $log;
+}
+
 function extend_email_templates_kind_enum_safe(PDO $pdo): string {
     $stmt = $pdo->prepare(
         "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS

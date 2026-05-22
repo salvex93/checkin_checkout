@@ -28,20 +28,27 @@ function auth_login(array $body): never {
         err('ACCOUNT_LOCKED', "Cuenta bloqueada temporalmente. Intenta en {$remaining} segundos.", 429, ['retry_after' => $remaining]);
     }
 
-    $user = db_one(
-        'SELECT u.id, u.email, u.name, u.password_hash, u.role, u.is_active, u.status,
-                u.must_change_password, u.company_id,
-                c.name AS company_name,
-                b.id AS brand_id, b.slug AS brand_slug, b.name AS brand_name,
-                b.logo_url AS brand_logo_url,
-                b.primary_color AS brand_primary_color,
-                b.secondary_color AS brand_secondary_color
-           FROM users u
-           LEFT JOIN companies c ON c.id = u.company_id
-           LEFT JOIN brands b ON b.id = c.brand_id
-          WHERE u.email = ?',
-        [$email]
-    );
+    // Lookup por email_hash si la migracion PII corrio; fallback a email plaintext.
+    $userBase = db_user_by_email($email, 'id');
+    $user = null;
+    if ($userBase) {
+        $piiCols = pii_columns_select('u');
+        $user = db_one(
+            "SELECT u.id, u.email, u.name, {$piiCols} u.password_hash, u.role, u.is_active, u.status,
+                    u.must_change_password, u.company_id,
+                    c.name AS company_name,
+                    b.id AS brand_id, b.slug AS brand_slug, b.name AS brand_name,
+                    b.logo_url AS brand_logo_url,
+                    b.primary_color AS brand_primary_color,
+                    b.secondary_color AS brand_secondary_color
+               FROM users u
+               LEFT JOIN companies c ON c.id = u.company_id
+               LEFT JOIN brands b ON b.id = c.brand_id
+              WHERE u.id = ?",
+            [(int)$userBase['id']]
+        );
+        if ($user) $user = user_decrypt_pii($user);
+    }
 
     // Mensaje generico identico para email inexistente vs password incorrecto
     // (anti enumeracion de usuarios — OWASP A07).
@@ -237,14 +244,20 @@ function auth_forgot_password(array $body): never {
     rate_limit_or_block('forgot_email', $email, 3, 900);
     rate_limit_or_block('forgot_ip', client_ip(), 10, 900);
 
-    $user = db_one(
-        'SELECT u.id, u.name, u.status, u.is_active, b.id AS brand_id, b.name AS brand_name
-           FROM users u
-           LEFT JOIN companies c ON c.id = u.company_id
-           LEFT JOIN brands b ON b.id = c.brand_id
-          WHERE u.email = ?',
-        [$email]
-    );
+    $userBase = db_user_by_email($email, 'id');
+    $user = null;
+    if ($userBase) {
+        $piiCols = pii_columns_select('u');
+        $user = db_one(
+            "SELECT u.id, u.name, {$piiCols} u.status, u.is_active, b.id AS brand_id, b.name AS brand_name
+               FROM users u
+               LEFT JOIN companies c ON c.id = u.company_id
+               LEFT JOIN brands b ON b.id = c.brand_id
+              WHERE u.id = ?",
+            [(int)$userBase['id']]
+        );
+        if ($user) $user = user_decrypt_pii($user);
+    }
     if ($user && (int)$user['is_active'] === 1 && ($user['status'] ?? '') === 'active') {
         $plain = bin2hex(random_bytes(32));
         $hash = hash('sha256', $plain);

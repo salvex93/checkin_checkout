@@ -193,8 +193,51 @@ function ip_in_cidr(string $ip, string $cidr): bool {
     return ($ipLong & $mask) === ($subnetLong & $mask);
 }
 
+/**
+ * Throttle por IP del cliente. Atajo sobre rate_limit_or_block.
+ * Si no hay IP detectable (proxy raro o CLI), no bloquea.
+ */
+function rate_limit_ip(string $scope, int $maxHits, int $windowSec): void {
+    $ip = client_ip();
+    if ($ip === '' || $ip === '0.0.0.0') return;
+    rate_limit_or_block($scope, $ip, $maxHits, $windowSec);
+}
+
+/**
+ * Enmascara PII en metadata de audit_log antes de persistir.
+ * Reemplaza emails completos por hash corto + dominio para conservar
+ * la utilidad de busqueda sin almacenar el local-part.
+ */
+function sanitize_pii_for_audit(array $metadata): array {
+    $maskEmail = static function (string $email): string {
+        $email = trim($email);
+        $at = strrpos($email, '@');
+        if ($at === false) return '***@***';
+        $local = substr($email, 0, $at);
+        $domain = substr($email, $at + 1);
+        $hash = substr(hash('sha256', strtolower($local . '@' . $domain)), 0, 8);
+        return $hash . '@' . $domain;
+    };
+    $walker = static function (&$value) use (&$walker, $maskEmail) {
+        if (is_string($value) && filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            $value = $maskEmail($value);
+            return;
+        }
+        if (is_array($value)) {
+            foreach ($value as $k => &$v) {
+                $walker($v);
+            }
+        }
+    };
+    foreach ($metadata as $k => &$v) {
+        $walker($v);
+    }
+    return $metadata;
+}
+
 function audit_log(?int $userId, string $event, array $metadata = []): void {
     try {
+        $clean = $metadata ? sanitize_pii_for_audit($metadata) : [];
         db_exec(
             'INSERT INTO audit_log (user_id, event, ip, user_agent, metadata) VALUES (?, ?, ?, ?, ?)',
             [
@@ -202,7 +245,7 @@ function audit_log(?int $userId, string $event, array $metadata = []): void {
                 $event,
                 client_ip(),
                 substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
-                $metadata ? json_encode($metadata, JSON_UNESCAPED_UNICODE) : null
+                $clean ? json_encode($clean, JSON_UNESCAPED_UNICODE) : null
             ]
         );
     } catch (Throwable $e) {
@@ -217,7 +260,9 @@ function audit_log(?int $userId, string $event, array $metadata = []): void {
  * Retorna segundos restantes de bloqueo o 0 si no esta bloqueada.
  */
 function account_lock_remaining(string $email): int {
-    $row = db_one('SELECT locked_until FROM users WHERE email = ?', [$email]);
+    $row = function_exists('db_user_by_email')
+        ? db_user_by_email($email, 'locked_until')
+        : db_one('SELECT locked_until FROM users WHERE email = ?', [$email]);
     if (!$row || !$row['locked_until']) return 0;
     $until = strtotime((string)$row['locked_until']);
     if ($until === false) return 0;
@@ -228,7 +273,9 @@ function account_lock_remaining(string $email): int {
 function register_failed_attempt(string $email): void {
     $max = env_int('AUTH_MAX_ATTEMPTS', 5);
     $minutes = env_int('AUTH_LOCK_MINUTES', 15);
-    $row = db_one('SELECT id, failed_attempts FROM users WHERE email = ?', [$email]);
+    $row = function_exists('db_user_by_email')
+        ? db_user_by_email($email, 'id, failed_attempts')
+        : db_one('SELECT id, failed_attempts FROM users WHERE email = ?', [$email]);
     if (!$row) return; // No revelamos si el email existe
     $next = (int)$row['failed_attempts'] + 1;
     if ($next >= $max) {
