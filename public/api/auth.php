@@ -263,7 +263,7 @@ function auth_forgot_password(array $body): never {
             'subjectOverride' => $override['subject'] ?? null,
             'introOverride' => $override['intro_html'] ?? null,
             'ctaOverride' => $override['cta_label'] ?? null,
-        ]);
+        ], resolve_email_brand($brandId));
         $sent = mail_send($email, $tpl['subject'], $tpl['html'], $tpl['text']);
         audit_log((int)$user['id'], $sent ? 'forgot_password_sent' : 'forgot_password_mail_failed');
     } else {

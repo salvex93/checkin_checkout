@@ -196,25 +196,41 @@ function email_template_render(string $tpl, array $vars, bool $forHtml = true): 
 // Templates de correo. HTML minimo accesible + version texto plano.
 // =====================================================================
 
-function tpl_layout(string $title, string $bodyHtml): string {
-    $title = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+function tpl_layout(string $title, string $bodyHtml, ?array $brand = null): string {
+    $titleSafe = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+
+    // Branding: si viene la marca usa logo + colores; si no, defaults Melius.
+    $brandName = (string)($brand['name'] ?? 'Melius Clockin');
+    $brandNameSafe = htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8');
+    $logoUrl = isset($brand['logo_url']) ? (string)$brand['logo_url'] : null;
+    $primary = (string)($brand['primary_color'] ?? '#0f172a');
+    $secondary = (string)($brand['secondary_color'] ?? $primary);
+    $primarySafe = preg_match('/^#[0-9a-fA-F]{3,6}$/', $primary) ? $primary : '#0f172a';
+    $secondarySafe = preg_match('/^#[0-9a-fA-F]{3,6}$/', $secondary) ? $secondary : $primarySafe;
+
+    $logoBlock = '';
+    if ($logoUrl !== null && $logoUrl !== '') {
+        $logoSafe = htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8');
+        $logoBlock = '<img src="' . $logoSafe . '" alt="' . $brandNameSafe . '" width="44" height="44" style="display:inline-block;width:44px;height:44px;border-radius:10px;background:#ffffff;padding:4px;vertical-align:middle;margin-right:12px;border:0;outline:0;">';
+    }
+
     return <<<HTML
 <!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{$title}</title>
+<title>{$titleSafe}</title>
 </head>
 <body style="margin:0;padding:24px;background:#f4f6f8;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1f2937;">
-<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="max-width:560px;width:100%;background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;">
-<tr><td style="padding:24px 28px;border-bottom:1px solid #e5e7eb;">
-<div style="font-size:18px;font-weight:600;color:#0f172a;">Melius Clockin</div>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="max-width:560px;width:100%;background:#ffffff;border-radius:14px;border:1px solid #e5e7eb;overflow:hidden;">
+<tr><td style="background:linear-gradient(135deg,{$primarySafe} 0%,{$secondarySafe} 100%);background-color:{$primarySafe};padding:22px 28px;color:#ffffff;">
+{$logoBlock}<span style="font-size:18px;font-weight:700;color:#ffffff;vertical-align:middle;">{$brandNameSafe}</span>
 </td></tr>
 <tr><td style="padding:24px 28px;font-size:15px;line-height:1.55;">
 {$bodyHtml}
 </td></tr>
-<tr><td style="padding:16px 28px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;">
+<tr><td style="padding:16px 28px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;background:#f9fafb;">
 Si no esperabas este correo, ignoralo. Para soporte responde a este mensaje.
 </td></tr>
 </table>
@@ -224,9 +240,32 @@ HTML;
 }
 
 /**
+ * Resuelve la marca para un email a partir del id de empresa o marca del destinatario.
+ * Devuelve [name, logo_url, primary_color, secondary_color] o null si no se encuentra.
+ */
+function resolve_email_brand(?int $brandId = null, ?int $companyId = null): ?array {
+    if ($brandId === null && $companyId !== null) {
+        $row = db_one('SELECT brand_id FROM companies WHERE id = ?', [$companyId]);
+        $brandId = $row && $row['brand_id'] !== null ? (int)$row['brand_id'] : null;
+    }
+    if ($brandId === null) return null;
+    $b = db_one(
+        'SELECT name, logo_url, primary_color, secondary_color FROM brands WHERE id = ?',
+        [$brandId]
+    );
+    if (!$b) return null;
+    return [
+        'name' => $b['name'] ?? 'Melius',
+        'logo_url' => $b['logo_url'] ?? null,
+        'primary_color' => $b['primary_color'] ?? null,
+        'secondary_color' => $b['secondary_color'] ?? null,
+    ];
+}
+
+/**
  * Plantilla: password temporal (alta de usuario por invitacion).
  */
-function mail_template_temp_password(string $name, string $email, string $tempPassword, string $loginUrl): array {
+function mail_template_temp_password(string $name, string $email, string $tempPassword, string $loginUrl, ?array $brand = null): array {
     $nameSafe = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
     $emailSafe = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
     $passSafe = htmlspecialchars($tempPassword, ENT_QUOTES, 'UTF-8');
@@ -251,9 +290,11 @@ HTML;
         . "Al iniciar sesion por primera vez se te pedira cambiar la contrasena.\n"
         . "Inicia sesion en: {$loginUrl}\n";
 
+    $brandName = (string)($brand['name'] ?? 'Melius');
+    $subject = "Tu acceso a {$brandName} Clockin";
     return [
-        'subject' => 'Tu acceso a Melius Clockin',
-        'html' => tpl_layout('Tu acceso a Melius Clockin', $body),
+        'subject' => $subject,
+        'html' => tpl_layout($subject, $body, $brand),
         'text' => $text,
     ];
 }
@@ -263,7 +304,7 @@ HTML;
  * Acepta overrides opcionales (subjectOverride, introOverride, ctaOverride,
  * brandName) cuando se invoca como mail_template_password_reset_ex.
  */
-function mail_template_password_reset(string $name, string $resetUrl, int $hours, array $overrides = []): array {
+function mail_template_password_reset(string $name, string $resetUrl, int $hours, array $overrides = [], ?array $brand = null): array {
     $brandName = (string)($overrides['brandName'] ?? 'Melius');
     $subjectOverride = $overrides['subjectOverride'] ?? null;
     $introOverride = $overrides['introOverride'] ?? null;
@@ -301,7 +342,7 @@ HTML;
 
     return [
         'subject' => $subject,
-        'html' => tpl_layout($subject, $body),
+        'html' => tpl_layout($subject, $body, $brand),
         'text' => $text,
     ];
 }
@@ -311,7 +352,7 @@ HTML;
  * temp_password directamente). Disponible si en el futuro decides aceptar
  * invitaciones donde el usuario elige su propia password al activar.
  */
-function mail_template_invitation(string $name, string $inviteUrl, int $hours): array {
+function mail_template_invitation(string $name, string $inviteUrl, int $hours, ?array $brand = null): array {
     $nameSafe = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
     $urlSafe = htmlspecialchars($inviteUrl, ENT_QUOTES, 'UTF-8');
     $hoursSafe = (int)$hours;
@@ -323,11 +364,13 @@ function mail_template_invitation(string $name, string $inviteUrl, int $hours): 
 <p style="color:#6b7280;font-size:13px;">El enlace expira en {$hoursSafe} horas.</p>
 HTML;
 
-    $text = "Hola {$name},\n\nFuiste invitado a Melius Clockin.\nActiva tu cuenta en (expira en {$hoursSafe} horas): {$inviteUrl}\n";
+    $brandName = (string)($brand['name'] ?? 'Melius');
+    $subject = "Invitacion a {$brandName} Clockin";
+    $text = "Hola {$name},\n\nFuiste invitado a {$brandName} Clockin.\nActiva tu cuenta en (expira en {$hoursSafe} horas): {$inviteUrl}\n";
 
     return [
-        'subject' => 'Invitacion a Melius Clockin',
-        'html' => tpl_layout('Invitacion a Melius Clockin', $body),
+        'subject' => $subject,
+        'html' => tpl_layout($subject, $body, $brand),
         'text' => $text,
     ];
 }
@@ -535,7 +578,7 @@ HTML;
  * Aviso al admin afectado tras desactivacion (soft delete) por otro admin.
  * No contiene credenciales. Si el admin considera que es un error, contacta soporte.
  */
-function mail_template_admin_disabled(string $name, string $companyName, string $actorName, array $overrides = []): array {
+function mail_template_admin_disabled(string $name, string $companyName, string $actorName, array $overrides = [], ?array $brand = null): array {
     $brandName = (string)($overrides['brandName'] ?? 'Melius');
     $subjectOverride = $overrides['subjectOverride'] ?? null;
     $introOverride = $overrides['introOverride'] ?? null;
@@ -569,7 +612,7 @@ HTML;
 
     return [
         'subject' => $subject,
-        'html' => tpl_layout('Cuenta desactivada', $body),
+        'html' => tpl_layout('Cuenta desactivada', $body, $brand),
         'text' => $text,
     ];
 }
@@ -577,7 +620,7 @@ HTML;
 /**
  * Recibo al admin que ejecuto la desactivacion. Confirmacion + traza para el actor.
  */
-function mail_template_admin_delete_receipt(string $actorName, string $targetName, string $targetEmail, string $companyName, array $overrides = []): array {
+function mail_template_admin_delete_receipt(string $actorName, string $targetName, string $targetEmail, string $companyName, array $overrides = [], ?array $brand = null): array {
     $brandName = (string)($overrides['brandName'] ?? 'Melius');
     $subjectOverride = $overrides['subjectOverride'] ?? null;
     $introOverride = $overrides['introOverride'] ?? null;
@@ -627,7 +670,7 @@ HTML;
 
     return [
         'subject' => $subject,
-        'html' => tpl_layout('Recibo de desactivacion', $body),
+        'html' => tpl_layout('Recibo de desactivacion', $body, $brand),
         'text' => $text,
     ];
 }
@@ -639,7 +682,7 @@ HTML;
  * dispara una alerta del motor geo_alerts.
  * Acepta overrides via email_templates con kind='location_alert'.
  */
-function mail_template_location_alert(array $params, array $overrides = []): array {
+function mail_template_location_alert(array $params, array $overrides = [], ?array $brand = null): array {
     $brandName  = (string)($overrides['brandName'] ?? 'Melius');
     $subjectOverride = $overrides['subjectOverride'] ?? null;
     $introOverride   = $overrides['introOverride'] ?? null;
@@ -725,7 +768,7 @@ HTML;
 
     return [
         'subject' => $subject,
-        'html' => tpl_layout('Alerta de ubicacion', $body),
+        'html' => tpl_layout('Alerta de ubicacion', $body, $brand),
         'text' => $text,
     ];
 }

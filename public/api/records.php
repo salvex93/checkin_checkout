@@ -15,6 +15,8 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/geo.php';
 require_once __DIR__ . '/geo_alerts.php';
+require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/anti_bot.php';
 require_once __DIR__ . '/terms.php';
 require_once __DIR__ . '/location_alert_notifier.php';
 
@@ -37,6 +39,61 @@ function require_company_for_clock(array $user): void {
         409,
         ['role' => $role]
     );
+}
+
+// Tolerancia (en minutos) tras la hora oficial de salida antes de marcar el cierre como tardio.
+const LATE_CLOSE_TOLERANCE_MIN = 30;
+
+/**
+ * Calcula si el clockout actual es tardio segun horario efectivo del usuario.
+ * Devuelve [bool late, int minutes_after_end].
+ */
+function compute_late_close(array $sched, string $nowHHMM): array {
+    $endStr = (string)($sched['work_end_time'] ?? '18:00');
+    if (!preg_match('/^\d{2}:\d{2}/', $endStr)) return [false, 0];
+    [$eh, $em] = array_map('intval', explode(':', substr($endStr, 0, 5)));
+    [$nh, $nm] = array_map('intval', explode(':', substr($nowHHMM, 0, 5)));
+    $endMin = $eh * 60 + $em;
+    $nowMin = $nh * 60 + $nm;
+    $delta = $nowMin - $endMin;
+    if ($delta <= LATE_CLOSE_TOLERANCE_MIN) return [false, max(0, $delta)];
+    return [true, $delta];
+}
+
+/**
+ * Notifica via email (best-effort) a los admins de la empresa del usuario cuando
+ * un consultor cierra tarde su jornada. Idempotente al nivel de envio: no lleva
+ * registro propio porque mail_send ya es no-bloqueante y la frecuencia es baja.
+ */
+function notify_admin_late_close(array $user, int $recordId, string $workDate, string $exitTime, int $lateMinutes): void {
+    try {
+        $companyId = isset($user['company_id']) && $user['company_id'] !== null ? (int)$user['company_id'] : null;
+        if (!$companyId) return;
+        $admins = db_all(
+            "SELECT email, name FROM users
+              WHERE company_id = ? AND role IN ('admin','super_admin')
+                AND is_active = 1 AND status = 'active'",
+            [$companyId]
+        );
+        if (!$admins) return;
+        $brand = function_exists('resolve_email_brand') ? resolve_email_brand(null, $companyId) : null;
+        $subject = 'Cierre tardio: ' . ($user['name'] ?? $user['email'] ?? 'consultor');
+        $userNameSafe = htmlspecialchars((string)($user['name'] ?? $user['email'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $body = '<p>El consultor <strong>' . $userNameSafe . '</strong> cerro su jornada con <strong>' . (int)$lateMinutes . ' minutos</strong> de retraso.</p>'
+              . '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;margin-top:8px;">'
+              . '<tr><td style="color:#6b7280;">Fecha</td><td><strong>' . htmlspecialchars($workDate, ENT_QUOTES, 'UTF-8') . '</strong></td></tr>'
+              . '<tr><td style="color:#6b7280;">Hora de cierre</td><td><strong>' . htmlspecialchars($exitTime, ENT_QUOTES, 'UTF-8') . '</strong></td></tr>'
+              . '<tr><td style="color:#6b7280;">Retraso</td><td><strong>' . (int)$lateMinutes . ' min</strong></td></tr>'
+              . '</table>'
+              . '<p style="color:#6b7280;font-size:12px;margin-top:14px;">Tolerancia configurada: ' . LATE_CLOSE_TOLERANCE_MIN . ' min tras la hora oficial de salida.</p>';
+        $html = function_exists('tpl_layout') ? tpl_layout($subject, $body, $brand) : $body;
+        $text = "Cierre tardio: {$userNameSafe} cerro con {$lateMinutes} min de retraso el {$workDate} a las {$exitTime}.";
+        foreach ($admins as $a) {
+            @mail_send((string)$a['email'], $subject, $html, $text);
+        }
+    } catch (Throwable $e) {
+        error_log('[notify_admin_late_close] ' . $e->getMessage());
+    }
 }
 
 /**
@@ -134,6 +191,7 @@ function records_clockin(array $body): never {
     $u = require_no_pending_password();
     require_terms_accepted($u);
     require_company_for_clock($u);
+    anti_bot_verify((int)$u['id'], $body);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
         ? $body['client_timezone'] : null;
@@ -234,6 +292,7 @@ function records_clockout(array $body = []): never {
     $u = require_no_pending_password();
     require_terms_accepted($u);
     require_company_for_clock($u);
+    anti_bot_verify((int)$u['id'], $body);
     $sched = effective_schedule($u);
     $clientTzRaw = isset($body['client_timezone']) && is_string($body['client_timezone'])
         ? $body['client_timezone'] : null;
@@ -247,6 +306,9 @@ function records_clockout(array $body = []): never {
     if (!$rec) err('NOT_CHECKED_IN', 'Debes marcar entrada primero.', 409);
     if ($rec['exit_time']) err('ALREADY_CHECKED_OUT', 'Ya registraste tu salida hoy.', 409);
 
+    // Calculo de cierre tardio: NO bloquea; solo marca flag + notifica admin si excede tolerancia.
+    [$lateClose, $lateMinutes] = compute_late_close($sched, $now);
+
     // Si el clockout viene desde una TZ distinta a la del clockin (viajaste),
     // se respeta la TZ del navegador para exit_time pero queda marcado.
     $exitMismatch = $tzInfo['mismatch'] || ($rec['tz_mismatch'] ?? 0);
@@ -256,6 +318,7 @@ function records_clockout(array $body = []): never {
     db_exec(
         'UPDATE attendance_records
             SET exit_time = ?, closed_reason = ?, tz_mismatch = ?,
+                late_close = ?, late_minutes = ?,
                 geo_country_code = COALESCE(geo_country_code, ?),
                 geo_country_name = COALESCE(geo_country_name, ?),
                 geo_city         = COALESCE(geo_city, ?),
@@ -271,12 +334,18 @@ function records_clockout(array $body = []): never {
           WHERE id = ?',
         [
             $now, 'normal', $exitMismatch ? 1 : 0,
+            $lateClose ? 1 : 0, $lateMinutes,
             $geo['country_code'], $geo['country_name'], $geo['city'], $geo['region'],
             $geo['lat'], $geo['lon'], $geo['ip_masked'], $geo['source'],
             $geo['country_code'], $geo['city'], $geo['lat'], $geo['lon'],
             $rec['id']
         ]
     );
+
+    // Notificacion admin si el cierre fue tardio (no bloquea ni se hace sincrono al usuario).
+    if ($lateClose) {
+        notify_admin_late_close($u, $rec['id'], $today, $now, $lateMinutes);
+    }
     // Evaluacion de alerta en salida: solo si tenemos coords actuales y diferentes al clockin.
     $exitEval = ['flag' => false, 'reasons' => [], 'context' => []];
     if (($geo['source'] ?? null) === 'ip' && !empty($geo['country_code'])) {
@@ -491,6 +560,8 @@ function normalize_record(array $r): array {
         'client_timezone' => $r['client_timezone'] ?? null,
         'tz_mismatch' => isset($r['tz_mismatch']) ? (bool)$r['tz_mismatch'] : false,
         'closed_reason' => $r['closed_reason'],
+        'late_close' => isset($r['late_close']) ? (bool)$r['late_close'] : false,
+        'late_minutes' => isset($r['late_minutes']) ? (int)$r['late_minutes'] : 0,
         'overtime_hours' => (float)$r['overtime_hours'],
         'overtime_status' => $r['overtime_status'],
         'geo_country_code' => $r['geo_country_code'] ?? null,

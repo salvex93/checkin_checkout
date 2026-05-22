@@ -106,7 +106,7 @@ function notify_location_alert_recipients(PDO $pdo, int $userId, int $attendance
         if (!empty($override['intro_html'])) $overrides['introOverride']   = $override['intro_html'];
         if (!empty($override['cta_label']))  $overrides['ctaOverride']     = $override['cta_label'];
     }
-    $tpl = mail_template_location_alert($params, $overrides);
+    $tpl = mail_template_location_alert($params, $overrides, resolve_email_brand($brandId));
 
     foreach ($recipients as $to) {
         mail_send($to, $tpl['subject'], $tpl['html'], $tpl['text']);

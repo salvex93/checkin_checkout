@@ -12,6 +12,24 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/mailer.php';
 
+/**
+ * Convierte HH:MM o HH:MM:SS desde una TZ origen a America/Mexico_City.
+ * Devuelve HH:MM o null si no se puede convertir.
+ */
+function _to_cdmx_hhmm(?string $hhmm, ?string $workDate, ?string $sourceTz): ?string {
+    if (!$hhmm || !$workDate || !$sourceTz) return null;
+    try {
+        $src = new DateTimeZone($sourceTz);
+        $dst = new DateTimeZone('America/Mexico_City');
+        // Tomamos HH:MM (ignoramos segundos para evitar drift de formato)
+        $t = substr($hhmm, 0, 5);
+        $dt = new DateTimeImmutable($workDate . ' ' . $t . ':00', $src);
+        return $dt->setTimezone($dst)->format('H:i');
+    } catch (Throwable $_) {
+        return null;
+    }
+}
+
 function admin_records(): never {
     require_admin();
     $rows = db_all(
@@ -23,6 +41,7 @@ function admin_records(): never {
          LIMIT 500'
     );
     ok(['records' => array_map(function ($r) {
+        $sourceTz = $r['client_timezone'] ?: ($r['timezone'] ?? 'America/Mexico_City');
         return [
             'id' => (int)$r['id'],
             'user_id' => (int)$r['user_id'],
@@ -32,10 +51,15 @@ function admin_records(): never {
             'work_date' => $r['work_date'],
             'entry_time' => $r['entry_time'],
             'exit_time' => $r['exit_time'],
+            'entry_time_cdmx' => _to_cdmx_hhmm($r['entry_time'] ?? null, $r['work_date'] ?? null, $sourceTz),
+            'exit_time_cdmx' => _to_cdmx_hhmm($r['exit_time'] ?? null, $r['work_date'] ?? null, $sourceTz),
+            'source_tz' => $sourceTz,
             'timezone' => $r['timezone'] ?? null,
             'client_timezone' => $r['client_timezone'] ?? null,
             'tz_mismatch' => isset($r['tz_mismatch']) ? (bool)$r['tz_mismatch'] : false,
             'closed_reason' => $r['closed_reason'],
+            'late_close' => isset($r['late_close']) ? (bool)$r['late_close'] : false,
+            'late_minutes' => isset($r['late_minutes']) ? (int)$r['late_minutes'] : 0,
             'overtime_hours' => (float)$r['overtime_hours'],
             'overtime_status' => $r['overtime_status'],
             'geo_country_code' => $r['geo_country_code'] ?? null,
@@ -1178,11 +1202,12 @@ function admin_users_delete(int $id, array $body): never {
     $overrideDisabled = email_template_load($brandIdDel, 'admin_disabled');
     $overrideReceipt = email_template_load($brandIdDel, 'admin_delete_receipt');
 
+    $brandForEmail = resolve_email_brand($brandIdDel);
     $tplTarget = mail_template_admin_disabled((string)$target['name'], $companyName, $actorName, [
         'brandName' => $brandNameDel,
         'subjectOverride' => $overrideDisabled['subject'] ?? null,
         'introOverride' => $overrideDisabled['intro_html'] ?? null,
-    ]);
+    ], $brandForEmail);
     @mail_send((string)$target['email'], $tplTarget['subject'], $tplTarget['html'], $tplTarget['text']);
 
     $tplActor = mail_template_admin_delete_receipt(
@@ -1194,7 +1219,8 @@ function admin_users_delete(int $id, array $body): never {
             'brandName' => $brandNameDel,
             'subjectOverride' => $overrideReceipt['subject'] ?? null,
             'introOverride' => $overrideReceipt['intro_html'] ?? null,
-        ]
+        ],
+        $brandForEmail
     );
     @mail_send((string)$admin['email'], $tplActor['subject'], $tplActor['html'], $tplActor['text']);
 
@@ -1338,6 +1364,12 @@ function admin_email_templates_preview(array $body): never {
     $brandSecondary = $brand['secondary_color'] ?? '#9909fe';
     $brandLogo = $brand && !empty($brand['logo_url']) ? absolute_asset_url((string)$brand['logo_url']) : null;
     $loginUrl = app_base_url() . '/';
+    $brandForLayout = $brand ? [
+        'name' => $brandName,
+        'logo_url' => $brandLogo,
+        'primary_color' => $brandPrimary,
+        'secondary_color' => $brandSecondary,
+    ] : null;
 
     switch ($kind) {
         case 'invitation':
@@ -1363,21 +1395,21 @@ function admin_email_templates_preview(array $body): never {
                 'subjectOverride' => $subjectOverride,
                 'introOverride' => $introOverride,
                 'ctaOverride' => $ctaOverride,
-            ]);
+            ], $brandForLayout);
             break;
         case 'admin_disabled':
             $tpl = mail_template_admin_disabled('Ana Gomez', 'Empresa Demo', 'Admin Demo', [
                 'brandName' => $brandName,
                 'subjectOverride' => $subjectOverride,
                 'introOverride' => $introOverride,
-            ]);
+            ], $brandForLayout);
             break;
         case 'admin_delete_receipt':
             $tpl = mail_template_admin_delete_receipt('Admin Demo', 'Ana Gomez', 'ana@empresa.com', 'Empresa Demo', [
                 'brandName' => $brandName,
                 'subjectOverride' => $subjectOverride,
                 'introOverride' => $introOverride,
-            ]);
+            ], $brandForLayout);
             break;
         default:
             err('INVALID_INPUT', 'Tipo de plantilla invalido.', 400);

@@ -24,6 +24,7 @@ require_once __DIR__ . '/dashboard.php';
 require_once __DIR__ . '/tenant.php';
 require_once __DIR__ . '/billing.php';
 require_once __DIR__ . '/terms.php';
+require_once __DIR__ . '/vacations.php';
 
 // Headers de seguridad antes que nada
 emit_security_headers();
@@ -82,7 +83,11 @@ if (preg_match('#^admin/email-templates/(\d+)/([a-z_]+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
-} elseif (preg_match('#^(admin/companies|admin/users|admin/brands|admin/dashboard/company)/(\d+)$#', $endpoint, $m)) {
+} elseif (preg_match('#^(admin/vacations)/(\d+)/(decide)$#', $endpoint, $m)) {
+    $endpointBase = $m[1];
+    $endpointId = (int)$m[2];
+    $endpointAction = $m[3];
+} elseif (preg_match('#^(admin/companies|admin/users|admin/brands|admin/dashboard/company|vacations)/(\d+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
 }
@@ -122,6 +127,9 @@ try {
             case 'POST admin/location-alerts/review':
                 admin_location_alerts_review($endpointId, $body);
                 return;
+            case 'POST admin/vacations/decide':
+                admin_vacations_decide($endpointId, $body);
+                return;
             default:
                 err('NOT_FOUND', "Endpoint {$method} /{$endpoint} no existe.", 404);
         }
@@ -146,6 +154,9 @@ try {
                 return;
             case 'DELETE admin/brands':
                 admin_brands_delete($endpointId);
+                return;
+            case 'DELETE vacations':
+                vacation_cancel($endpointId);
                 return;
             case 'GET admin/dashboard/company':
                 admin_dashboard_company($endpointId);
@@ -216,6 +227,12 @@ try {
         case 'POST records/change-company':
             records_change_company($body);
 
+        // --- Vacaciones (reemplaza horas extra como modulo de solicitudes) ---
+        case 'POST vacations/request':
+            vacation_request($body);
+        case 'GET vacations/mine':
+            vacation_mine();
+
         // --- Admin ---
         case 'GET admin/records':
             admin_records();
@@ -225,6 +242,8 @@ try {
             admin_overtime_requests();
         case 'POST admin/decide':
             admin_decide($body);
+        case 'GET admin/vacations':
+            admin_vacations_list();
 
         // --- Admin: tenant settings (white-label) ---
         case 'GET admin/tenant-settings':

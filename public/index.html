@@ -221,7 +221,9 @@
                 Tag: (<><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1"/></>),
                 ChevronDown: <path d="m6 9 6 6 6-6"/>,
                 Bell: (<><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></>),
-                User: (<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>)
+                User: (<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>),
+                CalendarDays: (<><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></>),
+                Plane: <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
@@ -270,6 +272,36 @@
         };
 
         // =====================================================================
+        // Select estandar reutilizable: mismo borde, radius, focus state, chevron
+        // SVG custom (elimina chevron nativo del SO via appearance:none). Cumple
+        // touch target minimo 44px en movil.
+        // =====================================================================
+        const Select = React.forwardRef(({ value, onChange, children, className = '', size = 'md', disabled, ...rest }, ref) => {
+            const sizes = {
+                sm: 'px-3 py-2 text-sm pr-9',
+                md: 'px-4 py-3 text-sm pr-10 min-h-[44px]',
+                lg: 'px-4 py-3.5 text-base pr-10 min-h-[48px]',
+            };
+            return (
+                <div className={`relative ${className}`}>
+                    <select
+                        ref={ref}
+                        value={value}
+                        onChange={onChange}
+                        disabled={disabled}
+                        className={`appearance-none w-full ${sizes[size] || sizes.md} rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
+                        {...rest}
+                    >
+                        {children}
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </span>
+                </div>
+            );
+        });
+
+        // =====================================================================
         // Componentes de loading / error / vacio (estados explicitos — Regla
         // tech-lead-frontend: ningun estado puede ser silencioso)
         // =====================================================================
@@ -311,7 +343,7 @@
             { sel: 'header-user', title: 'Tu identidad', body: 'Aquí ves tu nombre, la marca y la empresa a la que estás asignado. Si la empresa no corresponde, solicita el cambio desde el enlace inferior. Solo puedes pedir cambios entre empresas de la misma marca.' },
             { sel: 'btn-clockin', title: 'Marcar entrada', body: 'Inicia tu jornada con un solo toque. El sistema registra la hora exacta y tu zona horaria. Solo puedes marcar entrada una vez al día.' },
             { sel: 'btn-clockout', title: 'Marcar salida', body: 'Cierra tu jornada al terminar. Si olvidaste marcar el día anterior y entras antes de las 06:00, el sistema te preguntará si fueron horas extra o un olvido.' },
-            { sel: 'btn-overtime', title: 'Horas extra', body: 'Declara horas extra para hoy o hasta 7 días atrás (máximo 6 horas por jornada). Necesitas tener una jornada registrada en esa fecha. Quedan en pendiente hasta que el administrador apruebe. Si ya están aprobadas y necesitas ajustarlas, pide una edición.' },
+            { sel: 'btn-vacation', title: 'Vacaciones', body: 'Solicita un rango de días de vacaciones con motivo opcional. La solicitud queda pendiente hasta que el administrador la apruebe o la rechace. No puedes solapar fechas con solicitudes activas.' },
             { sel: 'btn-history', title: 'Tu historial', body: 'Consulta todos tus registros previos con horas trabajadas, estatus de horas extra y motivos de cierre. Puedes exportar tu historial a CSV cuando lo necesites.' },
             { sel: 'user-menu', title: 'Tu menú de usuario', body: 'Desde aquí cambias entre tema claro y oscuro, repites este tutorial cuando quieras o cierras sesión. También verás tu correo y nombre de la sesión activa.' },
         ];
@@ -321,7 +353,7 @@
             { sel: 'admin-tab-dashboard', title: 'Dashboard', body: 'Resumen ejecutivo del día: horas trabajadas, horas extra pendientes y aprobadas, consultores activos y solicitudes que requieren tu atención.' },
             { sel: 'admin-tab-records', title: 'Registros', body: 'Todos los marcajes del equipo. Filtra por consultor, fecha, empresa o estatus. Exporta a CSV para reportes externos.' },
             { sel: 'admin-tab-agents', title: 'Consultores', body: 'Invita consultores por correo (individual o por CSV masivo), gestiona sus perfiles, reenvía invitaciones pendientes y desactiva accesos cuando salgan del equipo.' },
-            { sel: 'admin-tab-requests', title: 'Solicitudes', body: 'Aprueba o rechaza cambios de empresa y horas extra solicitadas por los consultores. Las horas aprobadas se contabilizan automáticamente en los reportes.' },
+            { sel: 'admin-tab-requests', title: 'Solicitudes', body: 'Aprueba o rechaza cambios de empresa y solicitudes de vacaciones de los consultores. Las solicitudes aprobadas se contabilizan automáticamente en los reportes.' },
             { sel: 'admin-user-menu', title: 'Tu menú de usuario', body: 'Desde aquí vuelves a tu checador personal, alternas el tema, repites este tutorial o cierras sesión.' },
         ];
 
@@ -348,25 +380,32 @@
             const [box, setBox] = useState(null);
 
             useEffect(() => {
-                let raf;
+                let raf, timer;
                 const measure = () => {
                     const step = steps[idx];
                     if (!step) { setBox(null); return; }
                     const el = document.querySelector(`[data-tour="${step.sel}"]`);
                     if (!el) { setBox({ missing: true }); return; }
                     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    raf = requestAnimationFrame(() => {
-                        const r = el.getBoundingClientRect();
-                        setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
-                    });
+                    // Esperar al smooth scroll (~300ms) antes de medir
+                    timer = setTimeout(() => {
+                        raf = requestAnimationFrame(() => {
+                            const r = el.getBoundingClientRect();
+                            const vw = window.innerWidth;
+                            const vh = window.innerHeight;
+                            const outOfView = r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw;
+                            if (outOfView) { setBox({ missing: true }); return; }
+                            setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
+                        });
+                    }, 320);
                 };
                 measure();
-                window.addEventListener('resize', measure);
-                window.addEventListener('scroll', measure, true);
+                const onResize = () => measure();
+                window.addEventListener('resize', onResize);
                 return () => {
                     if (raf) cancelAnimationFrame(raf);
-                    window.removeEventListener('resize', measure);
-                    window.removeEventListener('scroll', measure, true);
+                    if (timer) clearTimeout(timer);
+                    window.removeEventListener('resize', onResize);
                 };
             }, [idx, steps]);
 
@@ -376,16 +415,24 @@
             const total = steps.length;
             const isLast = idx === total - 1;
 
-            // Posicionar tooltip debajo del elemento (o arriba si no cabe).
-            let tooltipStyle = { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', maxWidth: 'calc(100vw - 32px)' };
+            // Posicionar tooltip respetando viewport. Estimacion conservadora del alto del tooltip = 260px.
+            const TOOLTIP_H = 260;
+            const MARGIN = 16;
+            let tooltipStyle = { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', maxWidth: 'calc(100vw - 32px)', width: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' };
             if (box && !box.missing) {
                 const vh = window.innerHeight;
-                const placeBelow = box.top + box.height + 200 < vh;
-                if (placeBelow) {
-                    tooltipStyle = { position: 'fixed', top: `${box.top + box.height + 12}px`, left: '16px', right: '16px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' };
-                } else {
-                    tooltipStyle = { position: 'fixed', bottom: `${vh - box.top + 12}px`, left: '16px', right: '16px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' };
+                const spaceBelow = vh - (box.top + box.height);
+                const spaceAbove = box.top;
+                const canFitBelow = spaceBelow >= TOOLTIP_H + MARGIN;
+                const canFitAbove = spaceAbove >= TOOLTIP_H + MARGIN;
+                if (canFitBelow) {
+                    const top = Math.max(MARGIN, Math.min(vh - TOOLTIP_H - MARGIN, box.top + box.height + 12));
+                    tooltipStyle = { position: 'fixed', top: `${top}px`, left: `${MARGIN}px`, right: `${MARGIN}px`, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', maxHeight: `calc(100vh - ${top + MARGIN}px)`, overflowY: 'auto' };
+                } else if (canFitAbove) {
+                    const bottom = Math.max(MARGIN, vh - box.top + 12);
+                    tooltipStyle = { position: 'fixed', bottom: `${bottom}px`, left: `${MARGIN}px`, right: `${MARGIN}px`, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', maxHeight: `calc(100vh - ${bottom + MARGIN}px)`, overflowY: 'auto' };
                 }
+                // Si no cabe arriba ni abajo, mantener el centrado por defecto.
             }
 
             return (
@@ -857,53 +904,59 @@
             };
 
             return (
-                <div className="max-w-3xl w-full bg-white dark:bg-slate-900 p-6 sm:p-10 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 relative">
-                    <div className="absolute top-4 right-4"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
-                    <h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 font-display">
-                        {terms?.title || 'Terminos y Condiciones'}
-                    </h2>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-                        Hola {currentUser?.name?.split(' ')[0] || ''}. Antes de continuar debes leer y aceptar los siguientes terminos y el aviso de privacidad. Tu aceptacion queda registrada con fecha, IP y pais.
-                    </p>
+                <div className="max-w-3xl w-full max-h-[92vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 relative flex flex-col">
+                    <div className="absolute top-4 right-4 z-10"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
+                    <div className="p-6 sm:p-10 pb-2 sm:pb-4 flex-shrink-0">
+                        <h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 font-display pr-12">
+                            {terms?.title || 'Terminos y Condiciones'}
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm">
+                            Hola {currentUser?.name?.split(' ')[0] || ''}. Antes de continuar debes leer y aceptar los siguientes terminos y el aviso de privacidad. Tu aceptacion queda registrada con fecha, IP y pais.
+                        </p>
+                    </div>
 
                     {loading ? (
-                        <p className="text-slate-500">Cargando...</p>
+                        <p className="text-slate-500 px-6 sm:px-10 py-6">Cargando...</p>
                     ) : !terms ? (
-                        <p className="text-amber-600 dark:text-amber-400">No hay terminos publicados. Contacta al administrador.</p>
+                        <p className="text-amber-600 dark:text-amber-400 px-6 sm:px-10 py-6">No hay terminos publicados. Contacta al administrador.</p>
                     ) : (
                         <>
-                            <div className="max-h-[50vh] overflow-y-auto pr-2 mb-6 border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-slate-50 dark:bg-slate-800/50">
-                                <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: terms.body_html }} />
-                                <hr className="my-6 border-slate-200 dark:border-slate-700" />
-                                <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: terms.privacy_html }} />
+                            <div className="flex-1 overflow-y-auto px-6 sm:px-10 py-4 min-h-0">
+                                <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-slate-50 dark:bg-slate-800/50">
+                                    <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: terms.body_html }} />
+                                    <hr className="my-6 border-slate-200 dark:border-slate-700" />
+                                    <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: terms.privacy_html }} />
+                                </div>
                             </div>
 
-                            <label className="flex items-start gap-3 cursor-pointer mb-6">
-                                <input
-                                    type="checkbox"
-                                    checked={agreed}
-                                    onChange={e => setAgreed(e.target.checked)}
-                                    className="mt-1 w-5 h-5 rounded border-slate-300"
-                                />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">
-                                    He leido y acepto los Terminos de Uso y el Aviso de Privacidad (version {terms.version}).
-                                </span>
-                            </label>
+                            <div className="flex-shrink-0 px-6 sm:px-10 py-4 sm:py-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-b-3xl">
+                                <label className="flex items-start gap-3 cursor-pointer mb-4">
+                                    <input
+                                        type="checkbox"
+                                        checked={agreed}
+                                        onChange={e => setAgreed(e.target.checked)}
+                                        className="mt-1 w-6 h-6 rounded border-2 border-slate-400 dark:border-slate-500 accent-blue-600 flex-shrink-0"
+                                    />
+                                    <span className="text-slate-700 dark:text-slate-200 text-sm font-semibold">
+                                        He leido y acepto los Terminos de Uso y el Aviso de Privacidad (version {terms.version}).
+                                    </span>
+                                </label>
 
-                            <div className="flex flex-col sm:flex-row gap-3">
-                                <button
-                                    onClick={handleAccept}
-                                    disabled={!agreed || accepting}
-                                    className="btn-melius px-6 py-3 rounded-xl text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {accepting ? 'Registrando...' : 'Aceptar y continuar'}
-                                </button>
-                                <button
-                                    onClick={onLogout}
-                                    className="px-6 py-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
-                                >
-                                    Cerrar sesion
-                                </button>
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button
+                                        onClick={handleAccept}
+                                        disabled={!agreed || accepting}
+                                        className="btn-melius px-6 py-3 rounded-xl text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed flex-1 sm:flex-initial min-h-[48px]"
+                                    >
+                                        {accepting ? 'Registrando...' : 'Aceptar y continuar'}
+                                    </button>
+                                    <button
+                                        onClick={onLogout}
+                                        className="px-6 py-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 min-h-[48px]"
+                                    >
+                                        Cerrar sesion
+                                    </button>
+                                </div>
                             </div>
                         </>
                     )}
@@ -1130,16 +1183,16 @@
                         {needsCompany && (
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Empresa a la que perteneces</label>
-                                <select
+                                <Select
                                     required
                                     value={companyId}
                                     onChange={(e) => setCompanyId(e.target.value)}
                                     disabled={loadingCompanies}
-                                    className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-bold"
+                                    size="lg"
                                 >
                                     <option value="" disabled>{loadingCompanies ? 'Cargando empresas...' : 'Selecciona una empresa'}</option>
                                     {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                </select>
+                                </Select>
                                 <p className="text-[11px] text-slate-500 ml-4 mt-1">Como administrador necesitas tener una empresa asignada para gestionar a tu equipo.</p>
                             </div>
                         )}
@@ -1167,6 +1220,9 @@
             const [error, setError] = useState(null);
             const [showChangeModal, setShowChangeModal] = useState(false);
             const [showOvertimeModal, setShowOvertimeModal] = useState(false);
+            const [showVacationModal, setShowVacationModal] = useState(false);
+            const [vacationList, setVacationList] = useState([]);
+            const [vacationLoading, setVacationLoading] = useState(false);
             const [pendingDecision, setPendingDecision] = useState(null);
             const [submitting, setSubmitting] = useState(false);
             const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -1207,11 +1263,30 @@
                 catch (_) { return null; }
             };
 
+            // Anti-bot: registra si hubo interaccion humana real (mouse/touch/keyboard) en la sesion.
+            const humanInteractionRef = useRef(false);
+            useEffect(() => {
+                const mark = () => { humanInteractionRef.current = true; };
+                window.addEventListener('mousemove', mark, { once: true, passive: true });
+                window.addEventListener('touchstart', mark, { once: true, passive: true });
+                window.addEventListener('keydown', mark, { once: true });
+                return () => {
+                    window.removeEventListener('mousemove', mark);
+                    window.removeEventListener('touchstart', mark);
+                    window.removeEventListener('keydown', mark);
+                };
+            }, []);
+
             const handleClockIn = async (extraBody = {}) => {
                 if (submitting) return;
                 setSubmitting(true);
                 try {
-                    const body = { client_timezone: clientTimezone(), ...extraBody };
+                    const body = {
+                        client_timezone: clientTimezone(),
+                        human_interaction: humanInteractionRef.current,
+                        hp_field: '',
+                        ...extraBody,
+                    };
                     const d = await apiFetch('records/clockin', { method: 'POST', body });
                     if (d.decision_required) {
                         setPendingDecision({ priorRecord: d.prior_record, rule: d.rule });
@@ -1234,7 +1309,11 @@
                 if (submitting) return;
                 setSubmitting(true);
                 try {
-                    const d = await apiFetch('records/clockout', { method: 'POST', body: { client_timezone: clientTimezone() } });
+                    const d = await apiFetch('records/clockout', { method: 'POST', body: {
+                        client_timezone: clientTimezone(),
+                        human_interaction: humanInteractionRef.current,
+                        hp_field: '',
+                    } });
                     setTodayRecord(d.record);
                     toast('success', 'Salida registrada.');
                     refresh();
@@ -1370,21 +1449,18 @@
                                 </button>
                             </div>
 
-                            {/* Card horas extra */}
-                            <div data-tour="btn-overtime" className="bg-white dark:bg-slate-900 p-5 sm:p-7 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            {/* Card vacaciones */}
+                            <div data-tour="btn-vacation" className="bg-white dark:bg-slate-900 p-5 sm:p-7 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                 <div className="flex items-center gap-3 sm:gap-4">
-                                    <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-2xl text-amber-600 dark:text-amber-300 shrink-0"><Icon name="Hourglass" /></div>
+                                    <div className="bg-emerald-100 dark:bg-emerald-900/40 p-3 rounded-2xl text-emerald-600 dark:text-emerald-300 shrink-0"><Icon name="CalendarDays" /></div>
                                     <div>
-                                        <h3 className="font-black text-base sm:text-lg text-slate-800 dark:text-slate-100">Horas extra</h3>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Máximo 6h por declaración · sujetas a aprobación</p>
+                                        <h3 className="font-black text-base sm:text-lg text-slate-800 dark:text-slate-100">Vacaciones</h3>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Solicita un rango de días · sujeto a aprobación</p>
                                     </div>
                                 </div>
-                                <button onClick={() => {
-                                        if (!todayRecord) { toast('error', 'Necesitas un registro del día para declarar horas extra.'); return; }
-                                        setShowOvertimeModal(true);
-                                    }}
-                                    className="px-5 sm:px-6 py-3 rounded-2xl bg-amber-500 text-white font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-200 dark:shadow-amber-900/30 w-full sm:w-auto">
-                                    Declarar horas extra
+                                <button onClick={() => setShowVacationModal(true)}
+                                    className="px-5 sm:px-6 py-3 rounded-2xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 w-full sm:w-auto min-h-[44px]">
+                                    Solicitar vacaciones
                                 </button>
                             </div>
 
@@ -1467,20 +1543,17 @@
                         <button onClick={() => setShowChangeModal(false)} className="w-full py-3 text-slate-400 dark:text-slate-500 font-bold hover:text-slate-600 dark:hover:text-slate-300 uppercase tracking-widest text-[10px]">Cancelar</button>
                     </Modal>
 
-                    {/* Modal horas extra voluntarias */}
-                    <Modal open={showOvertimeModal} onClose={() => setShowOvertimeModal(false)} title="Declarar horas extra">
-                        <OvertimeForm
-                            title="Declarar horas extra"
-                            helpText="Indica cuántas horas extra trabajaste hoy (máx. 6h). Quedarán pendientes hasta aprobación del administrador."
-                            onSubmit={async (hours, reason) => {
+                    {/* Modal solicitud de vacaciones */}
+                    <Modal open={showVacationModal} onClose={() => setShowVacationModal(false)} title="Solicitar vacaciones" maxWidth="max-w-lg">
+                        <VacationForm
+                            onSubmit={async (start_date, end_date, reason) => {
                                 try {
-                                    await apiFetch('records/overtime', { method: 'POST', body: { hours, reason } });
-                                    toast('success', 'Horas extra enviadas a aprobación.');
-                                    setShowOvertimeModal(false);
-                                    refresh();
+                                    const r = await apiFetch('vacations/request', { method: 'POST', body: { start_date, end_date, reason } });
+                                    toast('success', `Solicitud enviada (${r.days} días).`);
+                                    setShowVacationModal(false);
                                 } catch (e) { toast('error', e.message); }
                             }}
-                            onCancel={() => setShowOvertimeModal(false)}
+                            onCancel={() => setShowVacationModal(false)}
                         />
                     </Modal>
 
@@ -1516,6 +1589,65 @@
                         )}
                     </Modal>
                 </div>
+            );
+        };
+
+        const VacationForm = ({ onSubmit, onCancel }) => {
+            const today = new Date().toISOString().slice(0, 10);
+            const [start, setStart] = useState(today);
+            const [end, setEnd] = useState(today);
+            const [reason, setReason] = useState('');
+            const [submitting, setSubmitting] = useState(false);
+            const days = (() => {
+                try {
+                    const a = new Date(start);
+                    const b = new Date(end);
+                    if (isNaN(a) || isNaN(b) || a > b) return 0;
+                    return Math.round((b - a) / 86400000) + 1;
+                } catch { return 0; }
+            })();
+            const handle = async (e) => {
+                e.preventDefault();
+                if (days <= 0) return;
+                setSubmitting(true);
+                try { await onSubmit(start, end, reason.trim()); }
+                finally { setSubmitting(false); }
+            };
+            return (
+                <form onSubmit={handle} className="space-y-5">
+                    <div>
+                        <h3 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Solicitud de vacaciones</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Selecciona el rango de fechas. La solicitud queda pendiente hasta que el administrador la apruebe o la rechace.</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label htmlFor="vac-start" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block">Inicio</label>
+                            <input id="vac-start" type="date" value={start} min={today} onChange={(e) => setStart(e.target.value)} required
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-bold min-h-[44px]" />
+                        </div>
+                        <div>
+                            <label htmlFor="vac-end" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block">Fin</label>
+                            <input id="vac-end" type="date" value={end} min={start || today} onChange={(e) => setEnd(e.target.value)} required
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-bold min-h-[44px]" />
+                        </div>
+                    </div>
+                    <div className={`text-sm font-bold ${days > 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-500'}`}>
+                        {days > 0 ? `Total: ${days} día${days === 1 ? '' : 's'} calendario` : 'Rango inválido'}
+                    </div>
+                    <div>
+                        <label htmlFor="vac-reason" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block">Motivo (opcional)</label>
+                        <textarea id="vac-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows="3" maxLength="500"
+                            placeholder="Ej. Viaje familiar, descanso médico, etc."
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-medium resize-none" />
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl font-bold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors order-2 sm:order-1 min-h-[48px]">Cancelar</button>
+                        <button type="submit" disabled={submitting || days <= 0} className="flex-1 py-3 rounded-xl font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 disabled:opacity-60 order-1 sm:order-2 flex items-center justify-center gap-2 min-h-[48px]">
+                            {submitting && <Icon name="Spinner" size={18} />}
+                            Enviar solicitud
+                        </button>
+                    </div>
+                </form>
             );
         };
 
@@ -1595,15 +1727,15 @@
                 const saved = readNavState().adminTab;
                 return saved && allowed.has(saved) ? saved : 'dashboard';
             });
-            // Subtab del bucket "requests" agrupado: cambios u extras.
+            // Subtab del bucket "requests" agrupado: cambios o vacaciones.
             const [requestsSub, setRequestsSub] = useState(() => {
                 const saved = readNavState().requestsSub;
-                return saved === 'overtime' ? 'overtime' : 'changes';
+                return saved === 'vacations' ? 'vacations' : 'changes';
             });
 
             useEffect(() => { writeNavState({ adminTab: activeTab }); }, [activeTab]);
             useEffect(() => { writeNavState({ requestsSub }); }, [requestsSub]);
-            const [counts, setCounts] = useState({ changes: 0, overtime: 0, alerts: 0 });
+            const [counts, setCounts] = useState({ changes: 0, vacations: 0, alerts: 0 });
             const [moreOpen, setMoreOpen] = useState(false);
             const [userMenuOpen, setUserMenuOpen] = useState(false);
             const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -1611,7 +1743,7 @@
             const userDesktopRef = useRef(null);
             const userMobileRef = useRef(null);
 
-            const totalRequests = counts.changes + counts.overtime;
+            const totalRequests = counts.changes + counts.vacations;
 
             // Cerrar dropdowns al hacer click fuera. Se valida contra los DOS refs
             // (desktop y movil) porque solo uno esta en el DOM segun breakpoint, pero
@@ -1630,14 +1762,14 @@
 
             const refreshCounts = useCallback(async () => {
                 try {
-                    const [cr, ot, al] = await Promise.all([
+                    const [cr, vac, al] = await Promise.all([
                         apiFetch('admin/change-requests'),
-                        apiFetch('admin/overtime-requests'),
+                        apiFetch('admin/vacations?status=pending').catch(() => ({ requests: [] })),
                         apiFetch('admin/location-alerts/pending-count').catch(() => ({ pending: 0 }))
                     ]);
                     setCounts({
                         changes: (cr.requests || []).length,
-                        overtime: (ot.requests || []).length,
+                        vacations: (vac.requests || []).length,
                         alerts: al.pending || 0
                     });
                 } catch (_) {}
@@ -1810,11 +1942,11 @@
                                 Cambios
                                 {counts.changes > 0 && <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{counts.changes}</span>}
                             </button>
-                            <button onClick={() => setRequestsSub('overtime')}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${requestsSub === 'overtime' ? 'btn-melius' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'}`}>
-                                <Icon name="Hourglass" size={14} />
-                                Extras
-                                {counts.overtime > 0 && <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center">{counts.overtime}</span>}
+                            <button onClick={() => setRequestsSub('vacations')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${requestsSub === 'vacations' ? 'btn-melius' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+                                <Icon name="CalendarDays" size={14} />
+                                Vacaciones
+                                {counts.vacations > 0 && <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-emerald-500 text-white text-[9px] font-black flex items-center justify-center">{counts.vacations}</span>}
                             </button>
                         </div>
                     )}
@@ -1824,7 +1956,7 @@
                     {activeTab === 'records' && <RecordsTab isSuper={isSuper} />}
                     {activeTab === 'agents' && <AgentsTab isSuper={isSuper} />}
                     {activeTab === 'requests' && requestsSub === 'changes' && <ChangesTab onChange={refreshCounts} />}
-                    {activeTab === 'requests' && requestsSub === 'overtime' && <OvertimeTab onChange={refreshCounts} />}
+                    {activeTab === 'requests' && requestsSub === 'vacations' && <VacationsTab onChange={refreshCounts} />}
                     {activeTab === 'brands' && isSuper && <BrandsTab />}
                     {activeTab === 'companies' && <CompaniesTab isSuper={isSuper} />}
                     {activeTab === 'admins' && <AdminsTab currentUser={currentUser} isSuper={isSuper} />}
@@ -1969,11 +2101,10 @@
                     <div className="flex flex-wrap gap-3 items-end justify-between">
                         <div className="flex flex-col">
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-1">Empresa</label>
-                            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}
-                                className="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 font-bold text-sm">
+                            <Select value={companyId} onChange={(e) => setCompanyId(e.target.value)} size="sm">
                                 <option value="">Todas</option>
                                 {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                            </Select>
                         </div>
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -2037,19 +2168,19 @@
                     <div className="flex flex-wrap items-end gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                         <div className="flex flex-col">
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-1">Periodo</label>
-                            <select value={period} onChange={(e) => setPeriod(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                            <Select value={period} onChange={(e) => setPeriod(e.target.value)} size="sm">
                                 <option value="week">Esta semana</option>
                                 <option value="month">Este mes</option>
                                 <option value="year">Este año</option>
-                            </select>
+                            </Select>
                         </div>
                         {isSuper && (
                             <div className="flex flex-col">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 mb-1">Empresa</label>
-                                <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                                <Select value={companyId} onChange={(e) => setCompanyId(e.target.value)} size="sm">
                                     <option value="">Todas</option>
                                     {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                </select>
+                                </Select>
                             </div>
                         )}
                         <button onClick={exportCsv} className="ml-auto px-4 py-2 rounded-xl bg-emerald-500 text-white font-bold text-sm hover:bg-emerald-600 transition-colors">
@@ -2126,11 +2257,12 @@
                         </label>
                         <label className="block">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Marca paraguas</span>
-                            <select value={form.brand_id} onChange={(e) => setForm({ ...form, brand_id: e.target.value })}
-                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
-                                <option value="">— Sin marca —</option>
-                                {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                            </select>
+                            <div className="mt-1">
+                                <Select value={form.brand_id} onChange={(e) => setForm({ ...form, brand_id: e.target.value })}>
+                                    <option value="">— Sin marca —</option>
+                                    {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                </Select>
+                            </div>
                         </label>
                         <label className="block">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Zona horaria (IANA)</span>
@@ -2499,10 +2631,9 @@
 
                     <div className="flex flex-wrap gap-2 items-center">
                         <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Marca</span>
-                        <select value={activeBrand || ''} onChange={(e) => setActiveBrand(parseInt(e.target.value, 10))}
-                            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold">
+                        <Select value={activeBrand || ''} onChange={(e) => setActiveBrand(parseInt(e.target.value, 10))} size="sm">
                             {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                        </select>
+                        </Select>
                     </div>
 
                     <div className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-700">
@@ -2566,9 +2697,9 @@
 
                         <div className="space-y-2">
                             <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Vista previa en vivo</span>
-                            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900 h-[560px]">
+                            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900 h-[60vh] sm:h-[560px] max-h-[560px] min-h-[320px]">
                                 <iframe srcDoc={previewHtml} title="Vista previa correo"
-                                    className="w-full h-full bg-white" sandbox="" />
+                                    className="w-full h-full bg-white" sandbox="allow-same-origin" />
                             </div>
                             <p className="text-[10px] text-slate-400">El correo real se enviará con el logo y colores de la marca seleccionada.</p>
                         </div>
@@ -3438,20 +3569,22 @@
                             {isSuper && (
                                 <label className="block">
                                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rol</span>
-                                    <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
-                                        className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
-                                        <option value="consultant">Consultor</option>
-                                        <option value="admin">Administrador</option>
-                                    </select>
+                                    <div className="mt-1">
+                                        <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                                            <option value="consultant">Consultor</option>
+                                            <option value="admin">Administrador</option>
+                                        </Select>
+                                    </div>
                                 </label>
                             )}
                             <label className="block">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Empresa</span>
-                                <select value={form.company_id} onChange={(e) => setForm({ ...form, company_id: e.target.value })}
-                                    className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
-                                    <option value="">— Sin empresa —</option>
-                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}{c.brand_name ? ` — ${c.brand_name}` : ''}</option>)}
-                                </select>
+                                <div className="mt-1">
+                                    <Select value={form.company_id} onChange={(e) => setForm({ ...form, company_id: e.target.value })}>
+                                        <option value="">— Sin empresa —</option>
+                                        {companies.map(c => <option key={c.id} value={c.id}>{c.name}{c.brand_name ? ` — ${c.brand_name}` : ''}</option>)}
+                                    </Select>
+                                </div>
                             </label>
                         </div>
                         <p className="text-[11px] text-slate-500">Se enviará un correo con una contraseña temporal. Revisarás el resumen antes de confirmar.</p>
@@ -3585,17 +3718,17 @@
                         <input placeholder="Buscar por nombre o correo" value={q} onChange={(e) => setQ(e.target.value)}
                             className="w-full sm:flex-1 sm:min-w-[200px] px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-medium" />
                         {isSuper && (
-                            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                            <Select value={companyId} onChange={(e) => setCompanyId(e.target.value)} size="sm" className="w-full sm:w-auto">
                                 <option value="">Todas las empresas</option>
                                 {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                            </Select>
                         )}
-                        <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 font-bold text-sm">
+                        <Select value={status} onChange={(e) => setStatus(e.target.value)} size="sm" className="w-full sm:w-auto">
                             <option value="">Cualquier estado</option>
                             <option value="active">Activos</option>
                             <option value="disabled">Deshabilitados</option>
                             <option value="pending_confirmation">Pendientes</option>
-                        </select>
+                        </Select>
                         <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
                             <button onClick={() => setBulkOpen(true)} className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-melius-cyan border border-cyan-100 dark:border-cyan-900/40 font-bold text-sm hover:bg-cyan-100 dark:hover:bg-cyan-900/50">Carga CSV</button>
                             <button onClick={() => setInviting(true)} className="flex-1 sm:flex-none px-4 py-2 rounded-xl btn-melius font-bold text-sm">+ Invitar</button>
@@ -3953,11 +4086,12 @@
                     {isSuper && (
                         <label className="block">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Empresa default (se aplica a filas con la columna company vacía)</span>
-                            <select value={defaultCompanyId} onChange={(e) => setDefaultCompanyId(e.target.value)}
-                                className="w-full mt-1 px-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold">
-                                <option value="">— Sin default (cada fila debe traer company) —</option>
-                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                            <div className="mt-1">
+                                <Select value={defaultCompanyId} onChange={(e) => setDefaultCompanyId(e.target.value)}>
+                                    <option value="">— Sin default (cada fila debe traer company) —</option>
+                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </Select>
+                            </div>
                         </label>
                     )}
 
@@ -4229,84 +4363,108 @@
             );
         };
 
-        const OvertimeTab = ({ onChange }) => {
+        const VacationsTab = ({ onChange }) => {
             const { push: toast } = useToast();
             const [items, setItems] = useState([]);
+            const [status, setStatus] = useState('pending');
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
+            const [busyId, setBusyId] = useState(null);
+            const [notes, setNotes] = useState({});
+
             const load = useCallback(async () => {
                 setLoading(true); setError(null);
-                try { const d = await apiFetch('admin/overtime-requests'); setItems(d.requests || []); }
-                catch (e) { setError(e.message); }
+                try {
+                    const d = await apiFetch(`admin/vacations?status=${status}`);
+                    setItems(d.requests || []);
+                } catch (e) { setError(e.message); }
                 finally { setLoading(false); }
-            }, []);
+            }, [status]);
             useEffect(() => { load(); }, [load]);
+
             const decide = async (id, decision) => {
-                try { await apiFetch('admin/decide', { method: 'POST', body: { type: 'overtime', id, decision } }); toast('success', `Solicitud ${decision === 'approve' ? 'aprobada' : 'rechazada'}.`); load(); onChange?.(); }
-                catch (e) { toast('error', e.message); }
+                if (busyId) return;
+                setBusyId(id);
+                try {
+                    await apiFetch(`admin/vacations/${id}/decide`, {
+                        method: 'POST',
+                        body: { decision, note: notes[id] || '' }
+                    });
+                    toast('success', decision === 'approved' ? 'Solicitud aprobada.' : 'Solicitud rechazada.');
+                    load(); onChange?.();
+                } catch (e) { toast('error', e.message); }
+                finally { setBusyId(null); }
             };
-            if (loading) return <LoadingScreen />;
-            if (error) return <ErrorState message={error} onRetry={load} />;
-            const news = items.filter(i => (i.request_type || 'new') === 'new');
-            const edits = items.filter(i => i.request_type === 'edit');
+
             return (
-                <div className="space-y-6">
-                    <div>
-                        <h3 className="font-black uppercase tracking-widest text-xs text-slate-500 mb-3">Nuevas solicitudes</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {news.map(req => (
-                                <div key={req.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-4">
-                                    <div>
-                                        <h4 className="font-bold text-base text-slate-800 dark:text-slate-100">{req.user_name}</h4>
-                                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{req.date}</p>
+                <div className="space-y-4">
+                    <div className="flex flex-wrap gap-2 items-center">
+                        {['pending', 'approved', 'rejected', 'cancelled'].map(s => (
+                            <button key={s} onClick={() => setStatus(s)}
+                                className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors min-h-[40px] ${
+                                    status === s
+                                        ? 'bg-emerald-500 text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                }`}>
+                                {s === 'pending' ? 'Pendientes' : s === 'approved' ? 'Aprobadas' : s === 'rejected' ? 'Rechazadas' : 'Canceladas'}
+                            </button>
+                        ))}
+                    </div>
+
+                    {loading && <LoadingScreen />}
+                    {error && <ErrorState message={error} onRetry={load} />}
+                    {!loading && !error && items.length === 0 && <EmptyState message={`Sin solicitudes ${status === 'pending' ? 'pendientes' : status}.`} />}
+
+                    {!loading && !error && items.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {items.map(req => (
+                                <div key={req.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col gap-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <h4 className="font-bold text-base text-slate-800 dark:text-slate-100 truncate">{req.user_name}</h4>
+                                            <p className="text-xs text-slate-400 truncate">{req.user_email}</p>
+                                            {req.company_name && <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">{req.company_name}</p>}
+                                        </div>
+                                        <div className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-1 rounded-lg text-xs font-black whitespace-nowrap">{req.days} día{req.days === 1 ? '' : 's'}</div>
                                     </div>
-                                    <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl">
-                                        <p className="text-[9px] text-slate-400 font-black uppercase mb-1">Horas declaradas</p>
-                                        <p className="font-black text-2xl text-amber-600 dark:text-amber-300">{req.hours}h</p>
+                                    <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl text-sm">
+                                        <p className="font-bold text-slate-700 dark:text-slate-200">Del <span className="font-mono">{req.start_date}</span></p>
+                                        <p className="font-bold text-slate-700 dark:text-slate-200">Al <span className="font-mono">{req.end_date}</span></p>
                                         {req.reason && <p className="text-xs text-slate-500 mt-2 italic break-words">"{req.reason}"</p>}
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => decide(req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 flex items-center justify-center gap-2"><Icon name="Check" size={16} /> Aprobar</button>
-                                        <button onClick={() => decide(req.id, 'reject')} className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 rounded-xl font-bold text-sm hover:bg-red-100 flex items-center justify-center gap-2"><Icon name="X" size={16} /> Rechazar</button>
-                                    </div>
+                                    {status === 'pending' ? (
+                                        <>
+                                            <input type="text" placeholder="Nota (opcional)" maxLength="500"
+                                                value={notes[req.id] || ''}
+                                                onChange={e => setNotes({ ...notes, [req.id]: e.target.value })}
+                                                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm" />
+                                            <div className="flex gap-2">
+                                                <button onClick={() => decide(req.id, 'approved')} disabled={busyId === req.id}
+                                                    className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 flex items-center justify-center gap-2 disabled:opacity-60 min-h-[44px]">
+                                                    <Icon name="Check" size={16} /> Aprobar
+                                                </button>
+                                                <button onClick={() => decide(req.id, 'rejected')} disabled={busyId === req.id}
+                                                    className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 rounded-xl font-bold text-sm hover:bg-red-100 flex items-center justify-center gap-2 disabled:opacity-60 min-h-[44px]">
+                                                    <Icon name="X" size={16} /> Rechazar
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="text-xs text-slate-400">
+                                            {req.decided_at && <p>Decidido: {req.decided_at}</p>}
+                                            {req.decision_note && <p className="italic mt-1">"{req.decision_note}"</p>}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
-                            {news.length === 0 && <EmptyState message="Sin solicitudes nuevas" />}
                         </div>
-                    </div>
-                    <div>
-                        <h3 className="font-black uppercase tracking-widest text-xs text-slate-500 mb-3">Ediciones pendientes</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {edits.map(req => (
-                                <div key={req.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-amber-200 dark:border-amber-900/40 shadow-sm flex flex-col gap-4">
-                                    <div>
-                                        <h4 className="font-bold text-base text-slate-800 dark:text-slate-100">{req.user_name}</h4>
-                                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Edición · {req.date}</p>
-                                    </div>
-                                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl">
-                                        <div className="text-center flex-1">
-                                            <p className="text-[9px] text-slate-400 font-black uppercase">Actual</p>
-                                            <p className="font-black text-amber-600 text-lg">{req.hours}h</p>
-                                        </div>
-                                        <Icon name="ArrowLeftRight" className="text-slate-300" size={16} />
-                                        <div className="text-center flex-1">
-                                            <p className="text-[9px] text-slate-400 font-black uppercase">Nuevo</p>
-                                            <p className="font-black text-emerald-500 text-lg">{req.new_hours}h</p>
-                                        </div>
-                                    </div>
-                                    {req.reason && <p className="text-xs text-slate-500 italic break-words">"{req.reason}"</p>}
-                                    <div className="flex gap-2">
-                                        <button onClick={() => decide(req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 flex items-center justify-center gap-2"><Icon name="Check" size={16} /> Aprobar</button>
-                                        <button onClick={() => decide(req.id, 'reject')} className="flex-1 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-300 py-2.5 rounded-xl font-bold text-sm hover:bg-red-100 flex items-center justify-center gap-2"><Icon name="X" size={16} /> Rechazar</button>
-                                    </div>
-                                </div>
-                            ))}
-                            {edits.length === 0 && <EmptyState message="Sin ediciones pendientes" />}
-                        </div>
-                    </div>
+                    )}
                 </div>
             );
         };
+
+        // Alias retro-compatible: OvertimeTab ahora muestra Vacaciones (modulo reemplazado)
+        const OvertimeTab = VacationsTab;
 
         const LocationAlertsTab = ({ onChange }) => {
             const { push: toast } = useToast();
@@ -4518,9 +4676,25 @@
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{rec.company_name || '—'}</td>
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium">
                         {rec.work_date}<TzMismatchBadge rec={rec} /><GeoBadge rec={rec} /><GeoExitBadge rec={rec} /><GeoAlertBadge rec={rec} />
+                        {rec.late_close && (
+                            <span title={`Cierre tardio: +${rec.late_minutes} min`}
+                                className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 cursor-help">
+                                <Icon name="AlertTriangle" size={10} /> TARDIO +{rec.late_minutes}m
+                            </span>
+                        )}
                     </td>
-                    <td className="px-6 py-4 font-mono font-bold text-blue-600 dark:text-blue-400">{rec.entry_time}</td>
-                    <td className="px-6 py-4 font-mono font-bold text-orange-600 dark:text-orange-400">{rec.exit_time || '--:--'}</td>
+                    <td className="px-6 py-4 font-mono font-bold text-blue-600 dark:text-blue-400">
+                        <div>{rec.entry_time}<span className="text-[9px] font-bold text-slate-400 ml-1">local</span></div>
+                        {rec.entry_time_cdmx && rec.entry_time_cdmx !== rec.entry_time && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{rec.entry_time_cdmx} <span className="text-[9px] font-bold text-slate-400">CDMX</span></div>
+                        )}
+                    </td>
+                    <td className="px-6 py-4 font-mono font-bold text-orange-600 dark:text-orange-400">
+                        <div>{rec.exit_time || '--:--'}<span className="text-[9px] font-bold text-slate-400 ml-1">local</span></div>
+                        {rec.exit_time_cdmx && rec.exit_time_cdmx !== rec.exit_time && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{rec.exit_time_cdmx} <span className="text-[9px] font-bold text-slate-400">CDMX</span></div>
+                        )}
+                    </td>
                     <td className="px-6 py-4 text-xs">{rec.overtime_hours > 0 ? `${rec.overtime_hours}h ${rec.overtime_status}` : '—'}</td>
                     <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-[10px] font-black tracking-tighter ${stateClass}`}>{stateLabel}</span></td>
                 </tr>
@@ -4538,14 +4712,20 @@
                         {rec.work_date}<TzMismatchBadge rec={rec} /><GeoBadge rec={rec} /><GeoExitBadge rec={rec} /><GeoAlertBadge rec={rec} />
                     </span>
                 </div>
-                <div className="flex gap-3 text-sm">
+                <div className="flex gap-3 text-sm flex-wrap">
                     <div>
                         <p className="text-[9px] font-black uppercase text-slate-400">Entrada</p>
-                        <p className="font-mono font-bold text-blue-600 dark:text-blue-400">{rec.entry_time}</p>
+                        <p className="font-mono font-bold text-blue-600 dark:text-blue-400">{rec.entry_time} <span className="text-[8px] font-bold text-slate-400">local</span></p>
+                        {rec.entry_time_cdmx && rec.entry_time_cdmx !== rec.entry_time && (
+                            <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">{rec.entry_time_cdmx} <span className="text-[8px] font-bold">CDMX</span></p>
+                        )}
                     </div>
                     <div>
                         <p className="text-[9px] font-black uppercase text-slate-400">Salida</p>
-                        <p className="font-mono font-bold text-orange-600 dark:text-orange-400">{rec.exit_time || '--:--'}</p>
+                        <p className="font-mono font-bold text-orange-600 dark:text-orange-400">{rec.exit_time || '--:--'} <span className="text-[8px] font-bold text-slate-400">local</span></p>
+                        {rec.exit_time_cdmx && rec.exit_time_cdmx !== rec.exit_time && (
+                            <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">{rec.exit_time_cdmx} <span className="text-[8px] font-bold">CDMX</span></p>
+                        )}
                     </div>
                     {rec.overtime_hours > 0 && (
                         <div>
