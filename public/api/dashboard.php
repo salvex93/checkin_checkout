@@ -117,16 +117,38 @@ function dashboard_compute(?int $companyFilter, bool $forceCompany): array {
     $workDays = count_business_days($monthStart, $today);
     $absences = max(0, ($workDays * (int)$active_users) - (int)$month_count);
 
-    // Horas extra agregadas por status.
-    $ot = db_one(
-        "SELECT
-            SUM(CASE WHEN ar.overtime_status = 'pending' THEN ar.overtime_hours ELSE 0 END) AS pending_h,
-            SUM(CASE WHEN ar.overtime_status = 'approved' THEN ar.overtime_hours ELSE 0 END) AS approved_h
-           FROM attendance_records ar
-           JOIN users u ON u.id = ar.user_id
-          WHERE ar.work_date >= ?{$whereCo}{$hideSuper}",
-        array_merge([$monthStart], $params)
-    );
+    // Solicitudes de vacaciones agregadas por status. Reemplaza el bloque de
+    // horas extra: el modulo de extras quedo deprecado en UI; el dashboard ahora
+    // refleja la actividad de vacaciones que es el flujo vigente.
+    $vac = null;
+    try {
+        $vac = db_one(
+            "SELECT
+                SUM(CASE WHEN vr.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+                SUM(CASE WHEN vr.status = 'approved' THEN
+                    (JULIANDAY(vr.end_date) - JULIANDAY(vr.start_date) + 1) ELSE 0 END) AS approved_days
+               FROM vacation_requests vr
+               JOIN users u ON u.id = vr.user_id
+              WHERE vr.created_at >= ?{$whereCo}{$hideSuper}",
+            array_merge([$monthStart], $params)
+        );
+    } catch (Throwable $e) {
+        // En MySQL JULIANDAY no existe — fallback con DATEDIFF.
+        try {
+            $vac = db_one(
+                "SELECT
+                    SUM(CASE WHEN vr.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+                    SUM(CASE WHEN vr.status = 'approved' THEN
+                        (DATEDIFF(vr.end_date, vr.start_date) + 1) ELSE 0 END) AS approved_days
+                   FROM vacation_requests vr
+                   JOIN users u ON u.id = vr.user_id
+                  WHERE vr.created_at >= ?{$whereCo}{$hideSuper}",
+                array_merge([$monthStart], $params)
+            );
+        } catch (Throwable $e2) {
+            $vac = ['pending_count' => 0, 'approved_days' => 0];
+        }
+    }
 
     $by_company = [];
     if (!$forceCompany && $companyFilter === null) {
@@ -160,8 +182,8 @@ function dashboard_compute(?int $companyFilter, bool $forceCompany): array {
             'active_users' => (int)$active_users,
             'late_month' => (int)$late_count,
             'absences_month' => (int)$absences,
-            'overtime_pending_hours' => (float)($ot['pending_h'] ?? 0),
-            'overtime_approved_hours' => (float)($ot['approved_h'] ?? 0),
+            'vacation_pending_count' => (int)($vac['pending_count'] ?? 0),
+            'vacation_approved_days' => (float)($vac['approved_days'] ?? 0),
         ],
         'by_company' => $by_company,
     ];

@@ -61,6 +61,10 @@ function env_int(string $key, int $default = 0): int {
 
 // Cargar .env desde la raiz del proyecto (dos niveles arriba de api/)
 load_env(__DIR__ . '/../../.env');
+// Sobrecarga opcional con .env.pii: archivo separado para claves de cifrado
+// PII. Permite gestionar las claves sin tocar el .env principal y rotar
+// independientemente. Si el archivo no existe, no pasa nada.
+load_env(__DIR__ . '/../../.env.pii');
 
 // Constantes de la aplicacion
 define('APP_ENV', env('APP_ENV', 'production'));

@@ -243,6 +243,45 @@ function run_backfill_pii_encryption(PDO $pdo): array {
     return $log;
 }
 
+/**
+ * Purga historico de horas extra. El modulo quedo deprecado en UI; esta
+ * migracion limpia las filas pendientes y los marcadores en attendance_records
+ * sin eliminar las columnas (asi el codigo que aun lee overtime_hours = 0
+ * sigue funcionando).
+ * Operacion: DELETE FROM overtime_requests + UPDATE attendance_records
+ * SET overtime_hours=0, overtime_status='none', overtime_reason=NULL,
+ * closed_reason=NULL where closed_reason='overtime'.
+ */
+function run_migration_purge_overtime(PDO $pdo): array {
+    $log = [];
+    try {
+        $deleted = $pdo->exec("DELETE FROM overtime_requests");
+        $log[] = "overtime_requests filas borradas: " . (int)$deleted;
+    } catch (Throwable $e) {
+        $log[] = "overtime_requests no existe o no se pudo borrar: " . $e->getMessage();
+    }
+    try {
+        $reset = $pdo->exec("UPDATE attendance_records
+                                SET overtime_hours = 0,
+                                    overtime_status = 'none',
+                                    overtime_reason = NULL
+                              WHERE overtime_hours > 0 OR overtime_status <> 'none' OR overtime_reason IS NOT NULL");
+        $log[] = "attendance_records reseteados: " . (int)$reset;
+    } catch (Throwable $e) {
+        $log[] = "no se pudo resetear attendance_records: " . $e->getMessage();
+    }
+    try {
+        $reclassed = $pdo->exec("UPDATE attendance_records
+                                    SET closed_reason = NULL
+                                  WHERE closed_reason = 'overtime'");
+        $log[] = "closed_reason='overtime' limpiados: " . (int)$reclassed;
+    } catch (Throwable $e) {
+        $log[] = "no se pudo limpiar closed_reason: " . $e->getMessage();
+    }
+    $log[] = 'OK';
+    return $log;
+}
+
 function extend_email_templates_kind_enum_safe(PDO $pdo): string {
     $stmt = $pdo->prepare(
         "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS

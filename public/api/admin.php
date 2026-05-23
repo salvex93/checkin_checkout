@@ -1583,6 +1583,8 @@ function admin_migrations_run(array $body): never {
             $log = run_migration_pii_encryption(Database::pdo());
         } elseif ($name === 'pii_backfill') {
             $log = run_backfill_pii_encryption(Database::pdo());
+        } elseif ($name === 'purge_overtime') {
+            $log = run_migration_purge_overtime(Database::pdo());
         } else {
             err('INVALID_INPUT', "Migracion desconocida: {$name}", 400, ['field' => 'name']);
         }

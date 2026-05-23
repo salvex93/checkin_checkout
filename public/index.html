@@ -342,15 +342,15 @@
         const TOUR_STEPS_USER = [
             { sel: 'header-user', title: 'Tu identidad', body: 'Aquí ves tu nombre, la marca y la empresa a la que estás asignado. Si la empresa no corresponde, solicita el cambio desde el enlace inferior. Solo puedes pedir cambios entre empresas de la misma marca.' },
             { sel: 'btn-clockin', title: 'Marcar entrada', body: 'Inicia tu jornada con un solo toque. El sistema registra la hora exacta y tu zona horaria. Solo puedes marcar entrada una vez al día.' },
-            { sel: 'btn-clockout', title: 'Marcar salida', body: 'Cierra tu jornada al terminar. Si olvidaste marcar el día anterior y entras antes de las 06:00, el sistema te preguntará si fueron horas extra o un olvido.' },
+            { sel: 'btn-clockout', title: 'Marcar salida', body: 'Cierra tu jornada al terminar. Si olvidaste marcar el día anterior y entras antes de las 06:00, el sistema cerrará automáticamente la jornada previa a las 18:00.' },
             { sel: 'btn-vacation', title: 'Vacaciones', body: 'Solicita un rango de días de vacaciones con motivo opcional. La solicitud queda pendiente hasta que el administrador la apruebe o la rechace. No puedes solapar fechas con solicitudes activas.' },
-            { sel: 'btn-history', title: 'Tu historial', body: 'Consulta todos tus registros previos con horas trabajadas, estatus de horas extra y motivos de cierre. Puedes exportar tu historial a CSV cuando lo necesites.' },
+            { sel: 'btn-history', title: 'Tu historial', body: 'Consulta todos tus registros previos con horas trabajadas y motivos de cierre. Puedes exportar tu historial a CSV cuando lo necesites.' },
             { sel: 'user-menu', title: 'Tu menú de usuario', body: 'Desde aquí cambias entre tema claro y oscuro, repites este tutorial cuando quieras o cierras sesión. También verás tu correo y nombre de la sesión activa.' },
         ];
 
         const TOUR_STEPS_ADMIN = [
             { sel: 'admin-header', title: 'Panel administrativo', body: 'Aquí gestionas a tu equipo: consultores, empresas, solicitudes pendientes y reportes. Tu vista depende de tu rol (admin o super admin).' },
-            { sel: 'admin-tab-dashboard', title: 'Dashboard', body: 'Resumen ejecutivo del día: horas trabajadas, horas extra pendientes y aprobadas, consultores activos y solicitudes que requieren tu atención.' },
+            { sel: 'admin-tab-dashboard', title: 'Dashboard', body: 'Resumen ejecutivo del día: horas trabajadas, días de vacaciones aprobados, solicitudes pendientes, consultores activos y registros que requieren tu atención.' },
             { sel: 'admin-tab-records', title: 'Registros', body: 'Todos los marcajes del equipo. Filtra por consultor, fecha, empresa o estatus. Exporta a CSV para reportes externos.' },
             { sel: 'admin-tab-agents', title: 'Consultores', body: 'Invita consultores por correo (individual o por CSV masivo), gestiona sus perfiles, reenvía invitaciones pendientes y desactiva accesos cuando salgan del equipo.' },
             { sel: 'admin-tab-requests', title: 'Solicitudes', body: 'Aprueba o rechaza cambios de empresa y solicitudes de vacaciones de los consultores. Las solicitudes aprobadas se contabilizan automáticamente en los reportes.' },
@@ -1476,7 +1476,6 @@
                                                 <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">
                                                     {log.work_date}
                                                     {log.closed_reason === 'forgotten' && ' · cerrado por olvido'}
-                                                    {log.closed_reason === 'overtime' && ' · cerrado como extra'}
                                                 </p>
                                                 <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
                                                     <div className="bg-white dark:bg-slate-900 px-3 sm:px-4 py-2 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
@@ -1487,21 +1486,6 @@
                                                         <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase mb-1">Salida</p>
                                                         <p className={`font-mono font-black text-lg sm:text-xl tracking-tight ${log.exit_time ? 'text-orange-600 dark:text-orange-400' : 'text-slate-300 dark:text-slate-600'}`}>{log.exit_time || '--:--'}</p>
                                                     </div>
-                                                    {log.overtime_hours > 0 && (
-                                                        <div className={`px-3 sm:px-4 py-2 rounded-xl shadow-sm border ${
-                                                            log.overtime_status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-100 dark:border-emerald-900' :
-                                                            log.overtime_status === 'rejected' ? 'bg-red-50 dark:bg-red-900/30 border-red-100 dark:border-red-900' :
-                                                            'bg-amber-50 dark:bg-amber-900/30 border-amber-100 dark:border-amber-900'
-                                                        }`}>
-                                                            <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase mb-1">Extra</p>
-                                                            <p className={`font-mono font-black text-base sm:text-lg tracking-tight ${
-                                                                log.overtime_status === 'approved' ? 'text-emerald-600 dark:text-emerald-300' :
-                                                                log.overtime_status === 'rejected' ? 'text-red-500 dark:text-red-300' :
-                                                                'text-amber-600 dark:text-amber-300'
-                                                            }`}>{log.overtime_hours}h</p>
-                                                            <p className="text-[8px] font-black uppercase mt-1">{log.overtime_status}</p>
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
                                             <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shrink-0 ${log.exit_time ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600'}`}>
@@ -1557,7 +1541,9 @@
                         />
                     </Modal>
 
-                    {/* Modal decision olvido/extra (devuelto por el servidor) */}
+                    {/* Modal confirmacion de olvido de cierre. Si el usuario marca entrada
+                        antes del grace_hour_am sin haber cerrado la jornada anterior, le
+                        ofrecemos cerrar a las 18:00 y comenzar la nueva. */}
                     <Modal open={!!pendingDecision} onClose={() => {}} title="Jornada anterior sin cerrar" dismissible={false}>
                         <div className="flex items-center gap-3 mb-5">
                             <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-2xl text-amber-600 dark:text-amber-300"><Icon name="AlertTriangle" /></div>
@@ -1566,27 +1552,13 @@
                         <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed">
                             Tu última jornada ({pendingDecision?.priorRecord?.work_date}) no tiene salida. Estás marcando entrada antes de las {String(pendingDecision?.rule?.grace_hour_am || 6).padStart(2,'0')}:00.
                         </p>
-                        {!pendingDecision?.declaring ? (
-                            <div className="grid grid-cols-1 gap-3">
-                                <button onClick={() => setPendingDecision(p => ({ ...p, declaring: true }))}
-                                    className="text-left p-5 rounded-2xl border-2 border-amber-100 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 hover:border-amber-400 transition-all">
-                                    <p className="font-black text-amber-700 dark:text-amber-300">Fueron horas extra</p>
-                                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Declaro cuántas (máx. 6h). Quedan pendientes de aprobación.</p>
-                                </button>
-                                <button onClick={() => handleClockIn({ declare_overtime: false })}
-                                    className="text-left p-5 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-slate-400 transition-all">
-                                    <p className="font-black text-slate-700 dark:text-slate-200">Olvidé marcar salida</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Cerramos la jornada anterior a las 18:00 e iniciamos la de hoy.</p>
-                                </button>
-                            </div>
-                        ) : (
-                            <OvertimeForm
-                                title=""
-                                helpText="Indica cuántas horas extra trabajaste después de las 18:00."
-                                onSubmit={(h, r) => handleClockIn({ declare_overtime: true, overtime_hours: h, overtime_reason: r })}
-                                onCancel={() => setPendingDecision(p => ({ ...p, declaring: false }))}
-                            />
-                        )}
+                        <div className="grid grid-cols-1 gap-3">
+                            <button onClick={() => handleClockIn({ declare_overtime: false })}
+                                className="text-left p-5 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-slate-400 transition-all">
+                                <p className="font-black text-slate-700 dark:text-slate-200">Cerrar jornada anterior y continuar</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Cerramos la jornada anterior a las 18:00 e iniciamos la de hoy.</p>
+                            </button>
+                        </div>
                     </Modal>
                 </div>
             );
@@ -1645,49 +1617,6 @@
                         <button type="submit" disabled={submitting || days <= 0} className="flex-1 py-3 rounded-xl font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 disabled:opacity-60 order-1 sm:order-2 flex items-center justify-center gap-2 min-h-[48px]">
                             {submitting && <Icon name="Spinner" size={18} />}
                             Enviar solicitud
-                        </button>
-                    </div>
-                </form>
-            );
-        };
-
-        const OvertimeForm = ({ onSubmit, onCancel, title, helpText }) => {
-            const [hours, setHours] = useState(1);
-            const [reason, setReason] = useState('');
-            const [submitting, setSubmitting] = useState(false);
-            const handle = async (e) => {
-                e.preventDefault();
-                const h = parseFloat(hours);
-                if (isNaN(h) || h <= 0 || h > 6) { return; }
-                setSubmitting(true);
-                try { await onSubmit(h, reason.trim()); }
-                finally { setSubmitting(false); }
-            };
-            return (
-                <form onSubmit={handle} className="space-y-5">
-                    {title && (
-                        <div>
-                            <h3 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">{title}</h3>
-                            {helpText && <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">{helpText}</p>}
-                        </div>
-                    )}
-                    {!title && helpText && <p className="text-sm text-slate-500 dark:text-slate-400">{helpText}</p>}
-                    <div>
-                        <label htmlFor="ot-hours" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Horas extra (máx. 6)</label>
-                        <input id="ot-hours" type="number" step="0.5" min="0.5" max="6" value={hours} onChange={(e) => setHours(e.target.value)} required
-                            className="w-full px-6 sm:px-7 py-4 rounded-2xl sm:rounded-3xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-amber-500 transition-all font-bold text-lg" />
-                    </div>
-                    <div>
-                        <label htmlFor="ot-reason" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 tracking-widest block">Motivo (opcional)</label>
-                        <textarea id="ot-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows="3" maxLength="240"
-                            placeholder="Ej. Cierre de jornada con el cliente..."
-                            className="w-full px-6 sm:px-7 py-4 rounded-2xl sm:rounded-3xl border-2 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-amber-500 transition-all font-medium resize-none" />
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <button type="button" onClick={onCancel} className="flex-1 py-4 rounded-2xl font-bold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors order-2 sm:order-1">Cancelar</button>
-                        <button type="submit" disabled={submitting} className="flex-1 py-4 rounded-2xl font-black text-white bg-amber-500 hover:bg-amber-600 transition-colors shadow-lg shadow-amber-200 dark:shadow-amber-900/30 disabled:opacity-60 order-1 sm:order-2 flex items-center justify-center gap-2">
-                            {submitting && <Icon name="Spinner" size={18} />}
-                            Enviar a aprobación
                         </button>
                     </div>
                 </form>
@@ -2114,8 +2043,8 @@
                         <Kpi label="Consultores activos" value={t.active_users ?? 0} />
                         <Kpi label="Retrasos del mes" value={t.late_month ?? 0} />
                         <Kpi label="Ausencias del mes" value={t.absences_month ?? 0} />
-                        <Kpi label="Extras pendientes (h)" value={(t.overtime_pending_hours ?? 0).toFixed(1)} />
-                        <Kpi label="Extras aprobadas (h)" value={(t.overtime_approved_hours ?? 0).toFixed(1)} />
+                        <Kpi label="Vacaciones pendientes" value={t.vacation_pending_count ?? 0} />
+                        <Kpi label="Días aprobados (mes)" value={(t.vacation_approved_days ?? 0).toFixed(0)} />
                     </div>
                     {data?.by_company?.length > 0 && (
                         <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -2197,13 +2126,12 @@
                                         <th className="px-6 py-4">Fecha</th>
                                         <th className="px-6 py-4">Entrada</th>
                                         <th className="px-6 py-4">Salida</th>
-                                        <th className="px-6 py-4">Extras</th>
                                         <th className="px-6 py-4">Estado</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y dark:divide-slate-800 text-sm">
                                     {records.map(rec => <AdminRecordRow key={rec.id} rec={rec} />)}
-                                    {records.length === 0 && <tr><td colSpan="7" className="px-6 py-20 text-center text-slate-300 italic">Sin registros aún</td></tr>}
+                                    {records.length === 0 && <tr><td colSpan="6" className="px-6 py-20 text-center text-slate-300 italic">Sin registros aún</td></tr>}
                                 </tbody>
                             </table>
                         </div>
@@ -4663,11 +4591,10 @@
 
         const AdminRecordRow = ({ rec }) => {
             const stateLabel = rec.exit_time
-                ? (rec.closed_reason === 'forgotten' ? 'OLVIDO 18:00' : rec.closed_reason === 'overtime' ? 'EXTRA' : 'COMPLETO')
+                ? (rec.closed_reason === 'forgotten' ? 'OLVIDO 18:00' : 'COMPLETO')
                 : 'EN TURNO';
             const stateClass = rec.exit_time
                 ? (rec.closed_reason === 'forgotten' ? 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' :
-                   rec.closed_reason === 'overtime' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300' :
                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300')
                 : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
             return (
@@ -4695,7 +4622,6 @@
                             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{rec.exit_time_cdmx} <span className="text-[9px] font-bold text-slate-400">CDMX</span></div>
                         )}
                     </td>
-                    <td className="px-6 py-4 text-xs">{rec.overtime_hours > 0 ? `${rec.overtime_hours}h ${rec.overtime_status}` : '—'}</td>
                     <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-[10px] font-black tracking-tighter ${stateClass}`}>{stateLabel}</span></td>
                 </tr>
             );
@@ -4727,12 +4653,6 @@
                             <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">{rec.exit_time_cdmx} <span className="text-[8px] font-bold">CDMX</span></p>
                         )}
                     </div>
-                    {rec.overtime_hours > 0 && (
-                        <div>
-                            <p className="text-[9px] font-black uppercase text-slate-400">Extra</p>
-                            <p className="font-mono font-bold text-amber-600 dark:text-amber-300">{rec.overtime_hours}h ({rec.overtime_status})</p>
-                        </div>
-                    )}
                 </div>
             </div>
         );
