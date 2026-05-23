@@ -59,12 +59,17 @@ function env_int(string $key, int $default = 0): int {
     return $v === null ? $default : (int)$v;
 }
 
-// Cargar .env desde la raiz del proyecto (dos niveles arriba de api/)
-load_env(__DIR__ . '/../../.env');
-// Sobrecarga opcional con .env.pii: archivo separado para claves de cifrado
-// PII. Permite gestionar las claves sin tocar el .env principal y rotar
-// independientemente. Si el archivo no existe, no pasa nada.
-load_env(__DIR__ . '/../../.env.pii');
+// Cargar .env: prueba dos ubicaciones porque el layout difiere entre dev y prod.
+// Dev (Windows/XAMPP): el .env vive dos niveles arriba (raiz del repo).
+// Prod (GoDaddy/Hostinger): docroot ES public/, asi que el .env vive un nivel arriba.
+foreach (['/../../.env', '/../.env'] as $rel) {
+    load_env(__DIR__ . $rel);
+}
+// Sobrecarga opcional con .env.pii: archivo separado para claves de cifrado PII.
+// Mismo criterio de doble ubicacion para mantener compatibilidad dev/prod.
+foreach (['/../../.env.pii', '/../.env.pii'] as $rel) {
+    load_env(__DIR__ . $rel);
+}
 
 // Constantes de la aplicacion
 define('APP_ENV', env('APP_ENV', 'production'));
