@@ -26,20 +26,19 @@ function emit_security_headers(): void {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
     }
 
-    // CSP: limita origenes permitidos para scripts, estilos, fuentes, etc.
-    // unsafe-inline en script-src es necesario por Babel-standalone (compila
-    // <script type=text/babel> en el cliente). Se elimina cuando precompilemos
-    // el JSX a JS plano (Tarea #7 del BACKLOG).
-    // CSP endurecido: unpkg.com solo para paths conocidos (React/ReactDOM/Babel),
-    // no para cualquier paquete npm. cdnjs solo para ColorThief.
+    // CSP endurecido: 'unsafe-inline' eliminado de script-src. El SPA se sirve
+    // precompilado desde /assets/app.js (build local). El unico bloque inline
+    // sobreviviente (bootstrap Tailwind + theme) se autoriza por hash SHA-256.
+    // 'unsafe-eval' permanece porque Tailwind CDN compila utilidades en runtime;
+    // se eliminara cuando migremos Tailwind a build offline.
     $csp = "default-src 'self'; "
          . "script-src 'self' "
             . "https://unpkg.com/react@18/ "
             . "https://unpkg.com/react-dom@18/ "
-            . "https://unpkg.com/@babel/standalone/ "
             . "https://cdn.tailwindcss.com "
             . "https://cdnjs.cloudflare.com/ajax/libs/color-thief/ "
-            . "'unsafe-inline'; "
+            . "'sha256-1kDBUhvyKLul8Jz9ors9S4ZyaJjRctUx1H1Du3bSZj0=' "
+            . "'unsafe-eval'; "
          . "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; "
          . "font-src 'self' https://fonts.gstatic.com; "
          . "img-src 'self' data: blob: https:; "

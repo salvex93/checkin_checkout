@@ -36,6 +36,9 @@ desktop.ini
 dist/
 build/
 
+# Node toolchain del build local (Babel CLI). package.json/lock SI se commitean.
+node_modules/
+
 # Caches
 .cache/
 __pycache__/
@@ -61,10 +64,13 @@ id_rsa.*
 clockin_clockout_rsa
 clockin_clockout_rsa.*
 clockin-deploy.zip
-deploy/
+# deploy/ se ignora globalmente excepto deploy/fail2ban/ (configs publicas).
+deploy/*
+!deploy/fail2ban/
 
 # Scripts de deploy con credenciales en claro
 scripts/deploy_index.sh
 scripts/deploy_*.sh
 scripts/_sftp_*.sh
 scripts/_ssh_*.sh
+scripts/_deploy_*.sh

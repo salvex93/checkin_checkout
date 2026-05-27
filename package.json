@@ -1,0 +1,14 @@
+{
+  "name": "clockin-clockout",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build local del SPA Clock System: extrae JSX inline y lo compila a JS plano para servir con CSP sin unsafe-inline.",
+  "scripts": {
+    "build": "babel public/assets/app.jsx --presets=@babel/preset-react --out-file public/assets/app.js --no-comments"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.0",
+    "@babel/core": "^7.24.0",
+    "@babel/preset-react": "^7.24.0"
+  }
+}
