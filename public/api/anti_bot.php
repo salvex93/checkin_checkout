@@ -14,6 +14,66 @@ const ANTI_BOT_BLACKLIST_UA = [
     'selenium', 'puppeteer', 'playwright',
 ];
 
+// UAs adicionales bloqueados a nivel global de API. Incluye crawlers SEO,
+// herramientas de scraping comercial y bots de research que no aportan valor
+// a un panel privado de control de jornada.
+const ANTI_BOT_GLOBAL_BLACKLIST_UA = [
+    'ahrefsbot', 'semrushbot', 'mj12bot', 'dotbot', 'rogerbot', 'blexbot',
+    'petalbot', 'serpstatbot', 'mauibot', 'dataforseobot', 'megaindex',
+    'screaming frog', 'sitebulb', 'http_request', 'apache-httpclient',
+    'java/', 'ruby', 'perl/', 'rust-reqwest', 'node-fetch', 'axios/',
+    'fasthttp', 'aiohttp', 'urllib3', 'httpx', 'mechanize', 'colly',
+    'gobuster', 'dirbuster', 'wpscan', 'nikto', 'sqlmap', 'nmap', 'masscan',
+    'zgrab', 'censys', 'shodan', 'expanse', 'paloalto', 'projectdiscovery',
+    'nuclei', 'feroxbuster', 'ffuf',
+];
+
+/**
+ * Bloqueo de UAs a nivel global de API. Se ejecuta antes del dispatcher en
+ * index.php. Combina la blacklist propia del modulo (scrapers/headless) con
+ * crawlers SEO y herramientas de pentesting que un panel privado nunca debe
+ * tolerar. Loguea el bloqueo en error_log con motivo claro para auditoria.
+ */
+function anti_bot_global_ua_filter(): void {
+    $ua = strtolower((string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
+    if ($ua === '') {
+        anti_bot_log_block('empty', '');
+        err('BOT_SUSPECTED', 'Bloqueado: User-Agent ausente.', 403);
+    }
+    // Bloqueo por UAs claramente automatizados (cualquier modulo).
+    foreach (ANTI_BOT_BLACKLIST_UA as $needle) {
+        if (strpos($ua, $needle) !== false) {
+            anti_bot_log_block('automation_ua', $ua);
+            err('BOT_SUSPECTED', "Bloqueado: cliente automatizado ({$needle}) no permitido en una API privada.", 403);
+        }
+    }
+    // Bloqueo por crawlers/scanners/scrapers comerciales.
+    foreach (ANTI_BOT_GLOBAL_BLACKLIST_UA as $needle) {
+        if (strpos($ua, $needle) !== false) {
+            anti_bot_log_block('scanner_ua', $ua);
+            err('BOT_SUSPECTED', "Bloqueado: agente externo no autorizado ({$needle}).", 403);
+        }
+    }
+}
+
+/**
+ * Log estructurado del bloqueo. Aterriza en error_log del servidor con un
+ * prefijo discriminable para tooling externo (grep, logrotate, fail2ban).
+ */
+function anti_bot_log_block(string $reason, string $ua): void {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $uri = $_SERVER['REQUEST_URI'] ?? '';
+    $payload = json_encode([
+        'event' => 'anti_bot_block',
+        'reason' => $reason,
+        'ip' => $ip,
+        'ua' => substr($ua, 0, 240),
+        'uri' => substr($uri, 0, 200),
+        'ts' => gmdate('c'),
+    ], JSON_UNESCAPED_SLASHES);
+    error_log('[anti-bot] ' . $payload);
+}
+
 /**
  * Verifica que la peticion provenga del mismo origen (defensa contra CSRF y
  * scripts que no controlan headers). Si Origin/Referer faltan o apuntan a

@@ -26,10 +26,18 @@ require_once __DIR__ . '/tenant.php';
 require_once __DIR__ . '/billing.php';
 require_once __DIR__ . '/terms.php';
 require_once __DIR__ . '/vacations.php';
+require_once __DIR__ . '/anti_bot.php';
 
 // Headers de seguridad antes que nada
 emit_security_headers();
 handle_cors();
+
+// Filtro global anti-scraper: bloquea UAs de scanners, scrapers comerciales y
+// herramientas de pentesting antes de tocar sesion o dispatch. OPTIONS exento
+// para no romper preflight CORS legitimo.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'OPTIONS') {
+    anti_bot_global_ua_filter();
+}
 
 // Sesion segura (cookie HttpOnly + SameSite=Strict)
 start_session_secure();

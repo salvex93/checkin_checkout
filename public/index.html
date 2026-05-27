@@ -257,11 +257,18 @@
                 if (!open) return;
                 const onKey = (e) => { if (e.key === 'Escape' && dismissible) onClose(); };
                 document.addEventListener('keydown', onKey);
+                // Scroll lock del body para que el fondo no scrollee en mobile cuando el modal esta abierto.
+                const prevOverflow = document.body.style.overflow;
+                document.body.style.overflow = 'hidden';
                 const t = setTimeout(() => {
                     const focusable = dialogRef.current?.querySelector('input, button, select, textarea, [tabindex]:not([tabindex="-1"])');
                     focusable?.focus();
                 }, 30);
-                return () => { document.removeEventListener('keydown', onKey); clearTimeout(t); };
+                return () => {
+                    document.removeEventListener('keydown', onKey);
+                    clearTimeout(t);
+                    document.body.style.overflow = prevOverflow;
+                };
             }, [open, onClose, dismissible]);
             if (!open) return null;
             return (
@@ -330,7 +337,7 @@
         );
 
         const EmptyState = ({ message }) => (
-            <div className="text-center py-12 sm:py-20 text-slate-300 dark:text-slate-600 italic font-medium">
+            <div className="text-center py-12 sm:py-20 text-slate-500 dark:text-slate-400 italic font-medium">
                 {message}
             </div>
         );
@@ -1394,11 +1401,11 @@
                                     <Icon name="ChevronDown" size={16} className={`text-slate-500 dark:text-slate-300 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
                                 </button>
                                 {userMenuOpen && (
-                                    <div role="menu" className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 z-30 anim-fade-in">
+                                    <div role="menu" className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-1rem)] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 z-30 anim-fade-in">
                                         <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                                             <div className="text-[10px] uppercase tracking-widest text-slate-400 font-black">Sesión activa</div>
                                             <div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate mt-0.5">{currentUser.name}</div>
-                                            <div className="text-[11px] text-slate-400 truncate">{currentUser.email || ''}</div>
+                                            <div className="text-[11px] text-slate-400 truncate" title={currentUser.email || ''}>{currentUser.email || ''}</div>
                                         </div>
                                         <button onClick={() => { setUserMenuOpen(false); onToggleTheme(); }}
                                             className="w-full text-left px-4 py-2.5 text-sm font-bold flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
@@ -1501,7 +1508,7 @@
                                                     </div>
                                                     <div className="bg-white dark:bg-slate-900 px-3 sm:px-4 py-2 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
                                                         <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase mb-1">Salida</p>
-                                                        <p className={`font-mono font-black text-lg sm:text-xl tracking-tight ${log.exit_time ? 'text-orange-600 dark:text-orange-400' : 'text-slate-300 dark:text-slate-600'}`}>{log.exit_time || '--:--'}</p>
+                                                        <p className={`font-mono font-black text-lg sm:text-xl tracking-tight ${log.exit_time ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400 dark:text-slate-500'}`}>{log.exit_time || '--:--'}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1842,11 +1849,11 @@
                                 <Icon name="ChevronDown" size={16} className={`text-slate-500 dark:text-slate-300 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
                             </button>
                             {userMenuOpen && (
-                                <div role="menu" className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 z-30 anim-fade-in">
+                                <div role="menu" className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-1rem)] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-2 z-30 anim-fade-in">
                                     <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                                         <div className="text-[10px] uppercase tracking-widest text-slate-400 font-black">Sesión activa</div>
                                         <div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate mt-0.5">{currentUser.name}</div>
-                                        <div className="text-[11px] text-slate-400 truncate">{currentUser.email || ''}</div>
+                                        <div className="text-[11px] text-slate-400 truncate" title={currentUser.email || ''}>{currentUser.email || ''}</div>
                                     </div>
                                     {onGoDashboard && (
                                         <button onClick={() => { setUserMenuOpen(false); onGoDashboard(); }}

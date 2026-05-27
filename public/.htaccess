@@ -31,6 +31,15 @@ RedirectMatch 404 /\.env
 RedirectMatch 404 /storage
 RedirectMatch 404 /api/lib/
 
+# Bloqueo de User-Agents de scrapers y scanners a nivel Apache. Cubre tambien
+# archivos estaticos (index.html, /assets/*) ademas de la API. La validacion
+# fina y el log estructurado vive en api/anti_bot.php; aqui descartamos los
+# casos triviales antes de llegar a PHP para no quemar CPU.
+<IfModule mod_rewrite.c>
+    RewriteCond %{HTTP_USER_AGENT} (curl|wget|python-requests|scrapy|libwww-perl|httpclient|okhttp|go-http-client|phantomjs|headlesschrome|selenium|puppeteer|playwright|ahrefsbot|semrushbot|mj12bot|dotbot|rogerbot|blexbot|petalbot|serpstatbot|dataforseobot|screaming\ frog|sitebulb|java/|ruby|perl/|rust-reqwest|node-fetch|axios/|aiohttp|httpx|mechanize|colly|gobuster|dirbuster|wpscan|nikto|sqlmap|nmap|masscan|zgrab|censys|shodan|projectdiscovery|nuclei|feroxbuster|ffuf) [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
 # Headers de seguridad como fallback si PHP no los emite (ej. archivos estaticos)
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
