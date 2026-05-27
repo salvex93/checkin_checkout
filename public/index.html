@@ -80,7 +80,12 @@
             * { transition-duration: 0ms !important; }
         }
         /* Touch target minimo 44x44 (WCAG AA mobile) */
-        button, [role="button"], input, select { min-height: 44px; }
+        /* Excluir checkbox/radio/file/hidden: tienen dimensiones propias y la regla global
+           rompia el alineado del checkbox de T&C y otros modales (input recibia 44px de alto). */
+        button, [role="button"], select,
+        input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]) {
+            min-height: 44px;
+        }
         /* Toast container */
         .toast-stack { position: fixed; top: 1rem; right: 1rem; left: 1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
         @media (min-width: 640px) { .toast-stack { left: auto; max-width: 24rem; } }
@@ -732,8 +737,13 @@
                                     const me = await apiFetch('auth/me');
                                     CSRF_TOKEN = me.csrf_token || CSRF_TOKEN;
                                     setCurrentUser(me.user);
-                                    setView('dashboard');
-                                } catch (_) { setView('login'); }
+                                    if (me.user.must_change_password) setView('change-password');
+                                    else if (me.user.terms_pending) setView('accept-terms');
+                                    else setView('dashboard');
+                                } catch (e) {
+                                    if (e && e._auth) setView('login');
+                                    else { toast('error', e.message || 'No se pudo continuar.'); setView('login'); }
+                                }
                             }}
                             onLogout={handleLogout}
                             theme={theme}
@@ -897,14 +907,20 @@
                 try {
                     await apiPost('terms/accept', { version: terms.version });
                     toast('success', 'Terminos aceptados.');
-                    onAccepted();
+                    // Disparar transicion de vista de forma asincrona para que el
+                    // componente se desmonte fuera de este stack y evitar setAccepting
+                    // en componente ya desmontado (warning React) ademas de garantizar
+                    // que la navegacion ocurra incluso si onAccepted lanza.
+                    setTimeout(() => { try { onAccepted(); } catch (_) {} }, 0);
                 } catch (e) {
                     toast('error', e.message || 'No se pudo registrar la aceptacion.');
-                } finally { setAccepting(false); }
+                    setAccepting(false);
+                }
             };
 
             return (
-                <div className="max-w-3xl w-full max-h-[92vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 relative flex flex-col">
+                <div className="fixed inset-0 z-40 bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
+                    <div className="max-w-3xl w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 relative flex flex-col" style={{ maxHeight: 'calc(100vh - 1rem)' }}>
                     <div className="absolute top-4 right-4 z-10"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
                     <div className="p-6 sm:p-10 pb-2 sm:pb-4 flex-shrink-0">
                         <h2 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 font-display pr-12">
@@ -960,6 +976,7 @@
                             </div>
                         </>
                     )}
+                    </div>
                 </div>
             );
         };
