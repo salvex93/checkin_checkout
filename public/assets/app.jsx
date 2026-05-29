@@ -171,25 +171,44 @@
                 };
             }, [open, onClose, dismissible]);
             if (!open) return null;
+            const overlayStyle = {
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '16px', boxSizing: 'border-box',
+                backgroundColor: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(6px)',
+            };
+            const isDark = document.documentElement.classList.contains('dark');
+            const bg = isDark ? '#0f172a' : '#ffffff';
+            const border = isDark ? '#1e293b' : '#f1f5f9';
             if (showHeader) {
                 return (
-                    <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6"
+                    <div style={overlayStyle}
                         onMouseDown={(e) => { if (dismissible && e.target === e.currentTarget) onClose(); }}
                         role="presentation">
                         <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
-                            className={`bg-white dark:bg-slate-900 w-full ${maxWidth} flex flex-col rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}
-                            style={{ maxHeight: 'min(90vh, calc(100dvh - 2rem))' }}>
-                            <div className="shrink-0 bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-t-3xl px-5 sm:px-8 py-4 flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800">
-                                <h2 className="font-black text-base sm:text-lg text-slate-800 dark:text-slate-100 truncate">{title}</h2>
+                            className="anim-zoom-in"
+                            style={{
+                                background: bg, border: `1px solid ${border}`,
+                                borderRadius: '20px', boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+                                width: '100%', maxWidth: '672px',
+                                maxHeight: 'calc(100vh - 32px)',
+                                display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                            }}>
+                            <div style={{
+                                flexShrink: 0, padding: '16px 24px',
+                                borderBottom: `1px solid ${border}`,
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                            }}>
+                                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 900, fontFamily: 'Poppins,Inter,sans-serif', color: isDark ? '#f1f5f9' : '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</h2>
                                 {dismissible && (
                                     <button type="button" onClick={onClose} aria-label="Cerrar"
-                                        className="shrink-0 w-9 h-9 min-h-0 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition-colors">
+                                        style={{ flexShrink: 0, width: '36px', height: '36px', minHeight: '36px', borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isDark ? '#1e293b' : '#f1f5f9', color: isDark ? '#94a3b8' : '#64748b' }}>
                                         <Icon name="X" size={16} />
                                     </button>
                                 )}
                             </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar px-5 sm:px-8 py-4 sm:py-6"
-                                style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+                            <div className="custom-scrollbar"
+                                style={{ flex: '1 1 0', overflowY: 'auto', padding: '24px', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
                                 {children}
                             </div>
                         </div>
@@ -197,12 +216,19 @@
                 );
             }
             return (
-                <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6"
+                <div style={overlayStyle}
                     onMouseDown={(e) => { if (dismissible && e.target === e.currentTarget) onClose(); }}
                     role="presentation">
                     <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
-                        className={`bg-white dark:bg-slate-900 w-full ${maxWidth} overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}
-                        style={{ maxHeight: 'min(90vh, calc(100dvh - 2rem))', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+                        className="custom-scrollbar anim-zoom-in"
+                        style={{
+                            background: bg, border: `1px solid ${border}`,
+                            borderRadius: '20px', boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+                            width: '100%', maxWidth: '448px',
+                            maxHeight: 'calc(100vh - 32px)',
+                            overflowY: 'auto', padding: '24px', boxSizing: 'border-box',
+                            overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
+                        }}>
                         {children}
                     </div>
                 </div>
