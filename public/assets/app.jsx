@@ -173,35 +173,39 @@
             if (!open) return null;
             if (showHeader) {
                 return (
-                    <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6"
+                    <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 overflow-y-auto"
                         onMouseDown={(e) => { if (dismissible && e.target === e.currentTarget) onClose(); }}
                         role="presentation">
-                        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
-                            className={`melius-modal-shell bg-white dark:bg-slate-900 w-full ${maxWidth} rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}>
-                            <div className="melius-modal-header bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-t-3xl px-5 sm:px-8 py-4 flex items-center justify-between gap-3">
-                                <h2 className="font-black text-base sm:text-lg text-slate-800 dark:text-slate-100 font-display truncate">{title}</h2>
-                                {dismissible && (
-                                    <button type="button" onClick={onClose} aria-label="Cerrar"
-                                        className="shrink-0 w-9 h-9 min-h-0 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition-colors">
-                                        <Icon name="X" size={16} />
-                                    </button>
-                                )}
-                            </div>
-                            <div className="melius-modal-body custom-scrollbar px-5 sm:px-8 py-4 sm:py-6">
-                                {children}
+                        <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
+                            <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
+                                className={`melius-modal-shell bg-white dark:bg-slate-900 w-full ${maxWidth} rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}>
+                                <div className="melius-modal-header bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-t-3xl px-5 sm:px-8 py-4 flex items-center justify-between gap-3">
+                                    <h2 className="font-black text-base sm:text-lg text-slate-800 dark:text-slate-100 font-display truncate">{title}</h2>
+                                    {dismissible && (
+                                        <button type="button" onClick={onClose} aria-label="Cerrar"
+                                            className="shrink-0 w-9 h-9 min-h-0 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition-colors">
+                                            <Icon name="X" size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="melius-modal-body custom-scrollbar px-5 sm:px-8 py-4 sm:py-6">
+                                    {children}
+                                </div>
                             </div>
                         </div>
                     </div>
                 );
             }
             return (
-                <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6"
+                <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 overflow-y-auto"
                     onMouseDown={(e) => { if (dismissible && e.target === e.currentTarget) onClose(); }}
                     role="presentation">
-                    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
-                        className={`bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[min(92vh,calc(100dvh-1rem))] overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}
-                        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
-                        {children}
+                    <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
+                        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
+                            className={`bg-white dark:bg-slate-900 w-full ${maxWidth} overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}
+                            style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+                            {children}
+                        </div>
                     </div>
                 </div>
             );

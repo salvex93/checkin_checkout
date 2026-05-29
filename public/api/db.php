@@ -68,15 +68,39 @@ class Database {
     private static function ensureSchemaSqlite(): void {
         $check = self::$pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'");
         $hasUsers = $check && $check->fetchColumn();
-        if ($hasUsers) return;
-
-        $schemaPath = __DIR__ . '/../../sql/schema.sqlite.sql';
-        if (!is_readable($schemaPath)) {
-            error_log("[db] schema.sqlite.sql no encontrado en {$schemaPath}");
+        if (!$hasUsers) {
+            $schemaPath = __DIR__ . '/../../sql/schema.sqlite.sql';
+            if (!is_readable($schemaPath)) {
+                error_log("[db] schema.sqlite.sql no encontrado en {$schemaPath}");
+                return;
+            }
+            $sql = file_get_contents($schemaPath);
+            self::$pdo->exec($sql);
             return;
         }
-        $sql = file_get_contents($schemaPath);
-        self::$pdo->exec($sql);
+        // Migraciones incrementales para DBs existentes (idempotentes via IF NOT EXISTS).
+        self::$pdo->exec("
+            CREATE TABLE IF NOT EXISTS vacation_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                company_id INTEGER NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                days_count INTEGER NOT NULL,
+                reason TEXT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','approved','rejected','cancelled')),
+                decided_by INTEGER NULL,
+                decided_at TEXT NULL,
+                decision_note TEXT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL,
+                FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
+            )
+        ");
+        self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_vac_user ON vacation_requests(user_id)");
+        self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_vac_status ON vacation_requests(status, start_date)");
     }
 }
 

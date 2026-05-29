@@ -281,6 +281,27 @@ CREATE TABLE IF NOT EXISTS email_templates (
 
 CREATE INDEX IF NOT EXISTS idx_etpl_brand ON email_templates(brand_id);
 
+CREATE TABLE IF NOT EXISTS vacation_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    company_id INTEGER NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    days_count INTEGER NOT NULL,
+    reason TEXT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+    decided_by INTEGER NULL,
+    decided_at TEXT NULL,
+    decision_note TEXT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL,
+    FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vac_user ON vacation_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_vac_status ON vacation_requests(status, start_date);
+
 -- Seed marcas paraguas
 INSERT OR IGNORE INTO brands (slug, name, logo_url, primary_color, secondary_color) VALUES
     ('melius',  'Melius Services',  '/assets/brands/melius.webp',  '#07d6da', '#9909fe'),

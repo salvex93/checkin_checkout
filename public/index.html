@@ -99,15 +99,12 @@
         /* Modal: layout flex-col con header/body/footer sticky para que el formulario
            no pierda los botones al hacer scroll en pantallas pequenas (mobile horizontal,
            teclado virtual abierto, etc). */
+        /* melius-modal-shell: el overlay padre ya hace overflow-y:auto,
+           por lo que el shell solo necesita ser flex-col para que header
+           y body se apilen correctamente. Sin max-height propio. */
         .melius-modal-shell {
             display: flex;
             flex-direction: column;
-            max-height: min(92vh, calc(100dvh - 1rem));
-            overflow: hidden;
-            overscroll-behavior: contain;
-        }
-        @supports not (height: 100dvh) {
-            .melius-modal-shell { max-height: 92vh; }
         }
         .melius-modal-header {
             position: sticky;
@@ -119,9 +116,6 @@
         html.dark .melius-modal-header { border-bottom-color: rgb(30 41 59 / 1); }
         .melius-modal-body {
             flex: 1 1 auto;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-            -webkit-overflow-scrolling: touch;
         }
         .melius-modal-footer {
             position: sticky;

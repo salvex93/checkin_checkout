@@ -335,11 +335,13 @@ const Modal = ({
   if (!open) return null;
   if (showHeader) {
     return React.createElement("div", {
-      className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6",
+      className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 overflow-y-auto",
       onMouseDown: e => {
         if (dismissible && e.target === e.currentTarget) onClose();
       },
       role: "presentation"
+    }, React.createElement("div", {
+      className: "flex min-h-full items-center justify-center p-3 sm:p-6"
     }, React.createElement("div", {
       ref: dialogRef,
       role: "dialog",
@@ -360,25 +362,27 @@ const Modal = ({
       size: 16
     }))), React.createElement("div", {
       className: "melius-modal-body custom-scrollbar px-5 sm:px-8 py-4 sm:py-6"
-    }, children)));
+    }, children))));
   }
   return React.createElement("div", {
-    className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6",
+    className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 overflow-y-auto",
     onMouseDown: e => {
       if (dismissible && e.target === e.currentTarget) onClose();
     },
     role: "presentation"
   }, React.createElement("div", {
+    className: "flex min-h-full items-center justify-center p-3 sm:p-6"
+  }, React.createElement("div", {
     ref: dialogRef,
     role: "dialog",
     "aria-modal": "true",
     "aria-label": title,
-    className: `bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[min(92vh,calc(100dvh-1rem))] overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`,
+    className: `bg-white dark:bg-slate-900 w-full ${maxWidth} overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`,
     style: {
       overscrollBehavior: 'contain',
       WebkitOverflowScrolling: 'touch'
     }
-  }, children));
+  }, children)));
 };
 const Select = React.forwardRef(({
   value,
