@@ -20,5 +20,5 @@ if ($candidate !== false
     return false;
 }
 
-require $publicDir . '/index.html';
+require $publicDir . '/index.php';
 return true;

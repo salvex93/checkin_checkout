@@ -5,6 +5,9 @@
 # =====================================================================
 
 # Forzar HTTPS (HostGator activa HTTPS por defecto en subdominios con SSL)
+# index.php es el entry point: genera el hash de app.js para cache-busting automatico.
+DirectoryIndex index.php index.html
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
@@ -18,6 +21,11 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^api/(.*)$ api/index.php [L,QSA]
+
+    # SPA fallback: cualquier ruta que no sea archivo ni directorio -> index.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [L,QSA]
 </IfModule>
 
 # Bloquear acceso a archivos sensibles que pudieran subirse por error
