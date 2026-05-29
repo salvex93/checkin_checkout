@@ -335,23 +335,24 @@ const Modal = ({
   if (!open) return null;
   if (showHeader) {
     return React.createElement("div", {
-      className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 overflow-y-auto",
+      className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6",
       onMouseDown: e => {
         if (dismissible && e.target === e.currentTarget) onClose();
       },
       role: "presentation"
     }, React.createElement("div", {
-      className: "flex min-h-full items-center justify-center p-3 sm:p-6"
-    }, React.createElement("div", {
       ref: dialogRef,
       role: "dialog",
       "aria-modal": "true",
       "aria-label": title,
-      className: `melius-modal-shell bg-white dark:bg-slate-900 w-full ${maxWidth} rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`
+      className: `bg-white dark:bg-slate-900 w-full ${maxWidth} flex flex-col rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`,
+      style: {
+        maxHeight: 'min(90vh, calc(100dvh - 2rem))'
+      }
     }, React.createElement("div", {
-      className: "melius-modal-header bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-t-3xl px-5 sm:px-8 py-4 flex items-center justify-between gap-3"
+      className: "shrink-0 bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-t-3xl px-5 sm:px-8 py-4 flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800"
     }, React.createElement("h2", {
-      className: "font-black text-base sm:text-lg text-slate-800 dark:text-slate-100 font-display truncate"
+      className: "font-black text-base sm:text-lg text-slate-800 dark:text-slate-100 truncate"
     }, title), dismissible && React.createElement("button", {
       type: "button",
       onClick: onClose,
@@ -361,17 +362,19 @@ const Modal = ({
       name: "X",
       size: 16
     }))), React.createElement("div", {
-      className: "melius-modal-body custom-scrollbar px-5 sm:px-8 py-4 sm:py-6"
-    }, children))));
+      className: "flex-1 overflow-y-auto custom-scrollbar px-5 sm:px-8 py-4 sm:py-6",
+      style: {
+        overscrollBehavior: 'contain',
+        WebkitOverflowScrolling: 'touch'
+      }
+    }, children)));
   }
   return React.createElement("div", {
-    className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 overflow-y-auto",
+    className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6",
     onMouseDown: e => {
       if (dismissible && e.target === e.currentTarget) onClose();
     },
     role: "presentation"
-  }, React.createElement("div", {
-    className: "flex min-h-full items-center justify-center p-3 sm:p-6"
   }, React.createElement("div", {
     ref: dialogRef,
     role: "dialog",
@@ -379,10 +382,11 @@ const Modal = ({
     "aria-label": title,
     className: `bg-white dark:bg-slate-900 w-full ${maxWidth} overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`,
     style: {
+      maxHeight: 'min(90vh, calc(100dvh - 2rem))',
       overscrollBehavior: 'contain',
       WebkitOverflowScrolling: 'touch'
     }
-  }, children)));
+  }, children));
 };
 const Select = React.forwardRef(({
   value,
