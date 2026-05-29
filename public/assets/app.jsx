@@ -4760,21 +4760,8 @@
             });
             observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-reactroot', 'id', 'class'] });
 
-            // Detectar DevTools abierto via timing (heuristica no invasiva)
-            let devtoolsOpen = false;
-            const devCheck = () => {
-                const t = performance.now();
-                // eslint-disable-next-line no-debugger
-                debugger;
-                if (performance.now() - t > 80 && !devtoolsOpen) {
-                    devtoolsOpen = true;
-                    report('devtools_open_detected');
-                }
-            };
-            // Solo en produccion — no interferir con desarrollo
-            if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-                setInterval(devCheck, 30000);
-            }
+            // Nota: deteccion de DevTools removida — genera falsos positivos
+            // que bloquean clockin de usuarios legitimos (admins depurando).
         })();
 
         const root = ReactDOM.createRoot(document.getElementById('root'));

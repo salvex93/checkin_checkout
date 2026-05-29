@@ -206,14 +206,17 @@ function anti_bot_check_ip_block(): void {
     $ip  = (string)($_SERVER['REMOTE_ADDR'] ?? '');
     if ($ip === '') return;
     try {
-        $driver = Database::pdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
         $cutoff = (new DateTimeImmutable('-' . ANTI_BOT_IP_BLOCK_WINDOW_S . ' seconds', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
-        $count = (int)db_one(
-            "SELECT COUNT(*) AS c FROM security_events WHERE ip = ? AND created_at >= ?",
+        // Solo contar eventos de alto riesgo para el bloqueo — excluir dom_manipulation
+        // y bot_blocked para no bloquear al usuario legitimo que tiene DevTools abierto.
+        $count = (int)(db_one(
+            "SELECT COUNT(*) AS c FROM security_events
+              WHERE ip = ? AND created_at >= ?
+                AND event_type IN ('scraping','brute_force','ip_blocked')",
             [$ip, $cutoff]
-        )['c'];
+        )['c'] ?? 0);
         if ($count >= ANTI_BOT_IP_BLOCK_THRESHOLD) {
-            anti_bot_record_event('ip_blocked', "IP bloqueada por {$count} eventos en " . ANTI_BOT_IP_BLOCK_WINDOW_S . "s");
+            anti_bot_record_event('ip_blocked', "IP bloqueada por {$count} eventos de alto riesgo en " . ANTI_BOT_IP_BLOCK_WINDOW_S . "s");
             err('IP_BLOCKED', 'Demasiadas solicitudes sospechosas. Intenta mas tarde.', 429);
         }
     } catch (Throwable $e) {

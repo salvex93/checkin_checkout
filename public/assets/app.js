@@ -6459,18 +6459,6 @@ const AdminRecordCard = ({
     attributes: true,
     attributeFilter: ['data-reactroot', 'id', 'class']
   });
-  let devtoolsOpen = false;
-  const devCheck = () => {
-    const t = performance.now();
-    debugger;
-    if (performance.now() - t > 80 && !devtoolsOpen) {
-      devtoolsOpen = true;
-      report('devtools_open_detected');
-    }
-  };
-  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-    setInterval(devCheck, 30000);
-  }
 })();
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(ToastProvider, null, React.createElement(BrandingProvider, null, React.createElement(App, null))));
