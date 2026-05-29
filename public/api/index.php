@@ -63,15 +63,16 @@ if (strlen($endpoint) > 80) {
 
 $body = in_array($method, ['POST', 'PUT', 'DELETE'], true) ? read_json_body() : [];
 
-// Rate-limit global por IP a endpoints autenticados (admin, records, vacations).
-// Limite generoso (120 req/min) para no afectar uso legitimo de un panel admin
-// activo, pero suficiente para frenar scraping o fuerza bruta sobre filtros.
-// auth/* y GET csrf quedan fuera: ya tienen throttles propios mas estrictos.
-$rateLimitedPrefixes = ['admin/', 'records/', 'vacations/'];
-foreach ($rateLimitedPrefixes as $prefix) {
-    if (str_starts_with($endpoint, $prefix)) {
-        rate_limit_ip('api_' . rtrim($prefix, '/'), 120, 60);
-        break;
+// Rate-limit global por IP. clockin/clockout tienen anti_bot_min_gap propio
+// — excluirlos aqui evita 429 por acumulacion de reintentos del mismo usuario.
+$rateLimitExclusions = ['records/clockin', 'records/clockout', 'records/today', 'records/mine'];
+if (!in_array($endpoint, $rateLimitExclusions, true)) {
+    $rateLimitedPrefixes = ['admin/', 'records/', 'vacations/'];
+    foreach ($rateLimitedPrefixes as $prefix) {
+        if (str_starts_with($endpoint, $prefix)) {
+            rate_limit_ip('api_' . rtrim($prefix, '/'), 120, 60);
+            break;
+        }
     }
 }
 // Bloqueo por historial de eventos de seguridad — solo en endpoints admin y auth.
