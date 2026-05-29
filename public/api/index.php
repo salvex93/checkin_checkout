@@ -74,8 +74,14 @@ foreach ($rateLimitedPrefixes as $prefix) {
         break;
     }
 }
-// Bloqueo por historial de eventos de seguridad acumulados en DB.
-if (!in_array($endpoint, ['csrf', 'branding', 'auth/login', 'auth/captcha'], true)) {
+// Bloqueo por historial de eventos de seguridad — solo en endpoints admin y auth.
+// Excluidos records/* y vacations/* para no bloquear clockin/clockout legitimos.
+$ipBlockEndpoints = ['admin/', 'auth/forgot-password', 'auth/reset-password'];
+$shouldCheckIpBlock = false;
+foreach ($ipBlockEndpoints as $prefix) {
+    if (str_starts_with($endpoint, $prefix)) { $shouldCheckIpBlock = true; break; }
+}
+if ($shouldCheckIpBlock) {
     anti_bot_check_ip_block();
 }
 

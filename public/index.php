@@ -12,13 +12,9 @@ $v = file_exists($appJsPath) ? substr(md5_file($appJsPath), 0, 8) : '1';
     <meta name="description" content="Portal de control de jornada laboral - Melius Services">
     <title>Clock System - Melius Services</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/assets/tailwind.min.css?v=<?= substr(md5_file(__DIR__ . '/assets/tailwind.min.css'), 0, 8) ?>">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.umd.js"></script>
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: { extend: { screens: { xs: '375px' } } }
-        };
         (function applyInitialTheme() {
             try {
                 const stored = localStorage.getItem('melius.theme');
