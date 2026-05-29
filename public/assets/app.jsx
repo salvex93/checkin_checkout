@@ -171,15 +171,27 @@
                 };
             }, [open, onClose, dismissible]);
             if (!open) return null;
-            const overlayStyle = {
-                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '16px', boxSizing: 'border-box',
-                backgroundColor: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(6px)',
-            };
             const isDark = document.documentElement.classList.contains('dark');
             const bg = isDark ? '#0f172a' : '#ffffff';
-            const border = isDark ? '#1e293b' : '#f1f5f9';
+            const borderColor = isDark ? '#1e293b' : '#e2e8f0';
+            // El overlay hace overflow-y:auto para que el modal sea siempre accesible
+            // sin importar su altura o el tamaño de la pantalla. El modal usa margin:auto
+            // para centrarse cuando hay espacio, y queda en el top con padding cuando no.
+            const overlayStyle = {
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                zIndex: 50, overflowY: 'auto', overflowX: 'hidden',
+                backgroundColor: 'rgba(15,23,42,0.75)', backdropFilter: 'blur(6px)',
+                WebkitBackdropFilter: 'blur(6px)',
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                padding: '24px 16px', boxSizing: 'border-box',
+            };
+            // maxWidth resuelto desde la prop Tailwind a valor CSS real
+            const widthMap = {
+                'max-w-sm': '384px', 'max-w-md': '448px', 'max-w-lg': '512px',
+                'max-w-xl': '576px', 'max-w-2xl': '672px', 'max-w-3xl': '768px',
+                'max-w-4xl': '896px',
+            };
+            const resolvedMaxWidth = widthMap[maxWidth] || '448px';
             if (showHeader) {
                 return (
                     <div style={overlayStyle}
@@ -188,27 +200,42 @@
                         <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
                             className="anim-zoom-in"
                             style={{
-                                background: bg, border: `1px solid ${border}`,
-                                borderRadius: '20px', boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
-                                width: '100%', maxWidth: '672px',
-                                maxHeight: 'calc(100vh - 32px)',
-                                display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                                background: bg, border: `1px solid ${borderColor}`,
+                                borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+                                width: '100%', maxWidth: resolvedMaxWidth,
+                                margin: 'auto 0',
+                                display: 'flex', flexDirection: 'column',
+                                flexShrink: 0,
                             }}>
                             <div style={{
-                                flexShrink: 0, padding: '16px 24px',
-                                borderBottom: `1px solid ${border}`,
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                                flexShrink: 0, padding: '18px 24px',
+                                borderBottom: `1px solid ${borderColor}`,
+                                display: 'flex', alignItems: 'center',
+                                justifyContent: 'space-between', gap: '12px',
+                                borderRadius: '16px 16px 0 0',
+                                background: bg,
                             }}>
-                                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 900, fontFamily: 'Poppins,Inter,sans-serif', color: isDark ? '#f1f5f9' : '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</h2>
+                                <h2 style={{
+                                    margin: 0, fontSize: '18px', fontWeight: 900,
+                                    fontFamily: 'Poppins,Inter,sans-serif',
+                                    color: isDark ? '#f1f5f9' : '#0f172a',
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                }}>{title}</h2>
                                 {dismissible && (
                                     <button type="button" onClick={onClose} aria-label="Cerrar"
-                                        style={{ flexShrink: 0, width: '36px', height: '36px', minHeight: '36px', borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isDark ? '#1e293b' : '#f1f5f9', color: isDark ? '#94a3b8' : '#64748b' }}>
+                                        style={{
+                                            flexShrink: 0, width: '36px', height: '36px', minHeight: '36px',
+                                            borderRadius: '50%', border: 'none', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            background: isDark ? '#1e293b' : '#f1f5f9',
+                                            color: isDark ? '#94a3b8' : '#64748b',
+                                        }}>
                                         <Icon name="X" size={16} />
                                     </button>
                                 )}
                             </div>
                             <div className="custom-scrollbar"
-                                style={{ flex: '1 1 0', overflowY: 'auto', padding: '24px', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+                                style={{ padding: '24px', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
                                 {children}
                             </div>
                         </div>
@@ -222,11 +249,12 @@
                     <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
                         className="custom-scrollbar anim-zoom-in"
                         style={{
-                            background: bg, border: `1px solid ${border}`,
-                            borderRadius: '20px', boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
-                            width: '100%', maxWidth: '448px',
-                            maxHeight: 'calc(100vh - 32px)',
-                            overflowY: 'auto', padding: '24px', boxSizing: 'border-box',
+                            background: bg, border: `1px solid ${borderColor}`,
+                            borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+                            width: '100%', maxWidth: resolvedMaxWidth,
+                            margin: 'auto 0',
+                            padding: '24px', boxSizing: 'border-box',
+                            flexShrink: 0,
                             overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
                         }}>
                         {children}

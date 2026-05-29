@@ -333,6 +333,9 @@ const Modal = ({
     };
   }, [open, onClose, dismissible]);
   if (!open) return null;
+  const isDark = document.documentElement.classList.contains('dark');
+  const bg = isDark ? '#0f172a' : '#ffffff';
+  const borderColor = isDark ? '#1e293b' : '#e2e8f0';
   const overlayStyle = {
     position: 'fixed',
     top: 0,
@@ -340,17 +343,27 @@ const Modal = ({
     right: 0,
     bottom: 0,
     zIndex: 50,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    backgroundColor: 'rgba(15,23,42,0.75)',
+    backdropFilter: 'blur(6px)',
+    WebkitBackdropFilter: 'blur(6px)',
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    padding: '16px',
-    boxSizing: 'border-box',
-    backgroundColor: 'rgba(15,23,42,0.7)',
-    backdropFilter: 'blur(6px)'
+    padding: '24px 16px',
+    boxSizing: 'border-box'
   };
-  const isDark = document.documentElement.classList.contains('dark');
-  const bg = isDark ? '#0f172a' : '#ffffff';
-  const border = isDark ? '#1e293b' : '#f1f5f9';
+  const widthMap = {
+    'max-w-sm': '384px',
+    'max-w-md': '448px',
+    'max-w-lg': '512px',
+    'max-w-xl': '576px',
+    'max-w-2xl': '672px',
+    'max-w-3xl': '768px',
+    'max-w-4xl': '896px'
+  };
+  const resolvedMaxWidth = widthMap[maxWidth] || '448px';
   if (showHeader) {
     return React.createElement("div", {
       style: overlayStyle,
@@ -366,33 +379,35 @@ const Modal = ({
       className: "anim-zoom-in",
       style: {
         background: bg,
-        border: `1px solid ${border}`,
-        borderRadius: '20px',
-        boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+        border: `1px solid ${borderColor}`,
+        borderRadius: '16px',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
         width: '100%',
-        maxWidth: '672px',
-        maxHeight: 'calc(100vh - 32px)',
+        maxWidth: resolvedMaxWidth,
+        margin: 'auto 0',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden'
+        flexShrink: 0
       }
     }, React.createElement("div", {
       style: {
         flexShrink: 0,
-        padding: '16px 24px',
-        borderBottom: `1px solid ${border}`,
+        padding: '18px 24px',
+        borderBottom: `1px solid ${borderColor}`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: '12px'
+        gap: '12px',
+        borderRadius: '16px 16px 0 0',
+        background: bg
       }
     }, React.createElement("h2", {
       style: {
         margin: 0,
-        fontSize: '17px',
+        fontSize: '18px',
         fontWeight: 900,
         fontFamily: 'Poppins,Inter,sans-serif',
-        color: isDark ? '#f1f5f9' : '#1e293b',
+        color: isDark ? '#f1f5f9' : '#0f172a',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap'
@@ -421,8 +436,6 @@ const Modal = ({
     }))), React.createElement("div", {
       className: "custom-scrollbar",
       style: {
-        flex: '1 1 0',
-        overflowY: 'auto',
         padding: '24px',
         overscrollBehavior: 'contain',
         WebkitOverflowScrolling: 'touch'
@@ -443,15 +456,15 @@ const Modal = ({
     className: "custom-scrollbar anim-zoom-in",
     style: {
       background: bg,
-      border: `1px solid ${border}`,
-      borderRadius: '20px',
-      boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+      border: `1px solid ${borderColor}`,
+      borderRadius: '16px',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
       width: '100%',
-      maxWidth: '448px',
-      maxHeight: 'calc(100vh - 32px)',
-      overflowY: 'auto',
+      maxWidth: resolvedMaxWidth,
+      margin: 'auto 0',
       padding: '24px',
       boxSizing: 'border-box',
+      flexShrink: 0,
       overscrollBehavior: 'contain',
       WebkitOverflowScrolling: 'touch'
     }
