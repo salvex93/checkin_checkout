@@ -21,6 +21,9 @@ function auth_login(array $body): never {
     $email = validate_email($body, 'email');
     $password = validate_string($body, 'password', 1, 200);
 
+    // Rate limit por IP: 15 intentos / 15 min. Anti-credential-stuffing.
+    rate_limit_ip('login_ip', 15, 900);
+
     // Rate limit por cuenta
     $remaining = account_lock_remaining($email);
     if ($remaining > 0) {
@@ -294,6 +297,9 @@ function auth_forgot_password(array $body): never {
  */
 function auth_reset_password(array $body): never {
     require_csrf();
+
+    // Rate limit por IP: defensa contra fuerza bruta sobre tokens robados.
+    rate_limit_ip('reset_ip', 20, 900);
 
     $token = validate_string($body, 'token', 64, 64);
     if (!preg_match('/^[a-f0-9]{64}$/', $token)) {

@@ -7,6 +7,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/mailer.php';
 
 const VACATION_MAX_DAYS_PER_REQUEST = 30;
 const VACATION_MAX_FUTURE_MONTHS = 12;
@@ -81,6 +82,15 @@ function vacation_request(array $body): never {
     audit_log((int)$u['id'], 'vacation_requested', [
         'id' => $id, 'start' => $start, 'end' => $end, 'days' => $days,
     ]);
+    notify_admins_new_request(
+        $u['company_id'] ? (int)$u['company_id'] : null,
+        [
+            'request_type' => 'vacation',
+            'employee_name' => $u['name'] ?? '',
+            'company_name' => $u['company_name'] ?? '',
+            'detail' => sprintf('%s al %s (%d dias)', $start, $end, $days),
+        ]
+    );
     ok(['id' => $id, 'days' => $days, 'status' => 'pending']);
 }
 

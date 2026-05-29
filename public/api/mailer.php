@@ -772,3 +772,103 @@ HTML;
         'text' => $text,
     ];
 }
+
+/**
+ * Plantilla generica para notificar a admins que un consultor envio una
+ * solicitud nueva (cambio de empresa, horas extra, edicion de overtime o
+ * vacaciones). Mensaje breve con CTA al panel admin.
+ */
+function mail_template_admin_new_request(array $opts, ?array $brand = null): array {
+    $brand = $brand ?: resolve_email_brand(null);
+    $brandName = htmlspecialchars($brand['name'] ?? 'Melius', ENT_QUOTES, 'UTF-8');
+
+    $requestType = $opts['request_type'] ?? 'solicitud';
+    $employee = htmlspecialchars((string)($opts['employee_name'] ?? 'Consultor'), ENT_QUOTES, 'UTF-8');
+    $company = htmlspecialchars((string)($opts['company_name'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $detail = htmlspecialchars((string)($opts['detail'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $reviewUrl = (string)($opts['review_url'] ?? app_base_url() . '/?tab=requests');
+
+    $typeLabels = [
+        'change_company' => 'Cambio de empresa',
+        'overtime_new'   => 'Horas extra',
+        'overtime_edit'  => 'Edicion de horas extra',
+        'vacation'       => 'Vacaciones',
+    ];
+    $typeLabel = $typeLabels[$requestType] ?? 'Solicitud';
+
+    $detailHtml = $detail !== '' ? "<tr><td style=\"padding:8px 0;color:#475569;\">Detalle</td><td style=\"padding:8px 0;font-weight:600;\">{$detail}</td></tr>" : '';
+    $companyHtml = $company !== '' ? "<tr><td style=\"padding:8px 0;color:#475569;\">Empresa</td><td style=\"padding:8px 0;font-weight:600;\">{$company}</td></tr>" : '';
+
+    $body = ''
+        . "<p style=\"font-size:15px;color:#1e293b;margin:0 0 16px;\">Hola, un consultor envio una solicitud que requiere tu revision.</p>"
+        . "<table cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;border-collapse:collapse;margin:16px 0;\">"
+        . "<tr><td style=\"padding:8px 0;color:#475569;\">Tipo</td><td style=\"padding:8px 0;font-weight:600;\">{$typeLabel}</td></tr>"
+        . "<tr><td style=\"padding:8px 0;color:#475569;\">Consultor</td><td style=\"padding:8px 0;font-weight:600;\">{$employee}</td></tr>"
+        . $companyHtml
+        . $detailHtml
+        . "</table>"
+        . "<p style=\"margin:24px 0;text-align:center;\"><a href=\"" . htmlspecialchars($reviewUrl, ENT_QUOTES, 'UTF-8') . "\" style=\"display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#07d6da,#9909fe);color:#ffffff;font-weight:700;text-decoration:none;border-radius:8px;\">Revisar en panel</a></p>";
+
+    $text = "Nueva solicitud requiere tu revision.\n\n"
+          . "Tipo: {$typeLabel}\n"
+          . "Consultor: " . ($opts['employee_name'] ?? '') . "\n"
+          . ($opts['company_name'] ? "Empresa: " . $opts['company_name'] . "\n" : '')
+          . ($opts['detail'] ? "Detalle: " . $opts['detail'] . "\n" : '')
+          . "\nRevisar: {$reviewUrl}\n";
+
+    return [
+        'subject' => "Nueva {$typeLabel} - {$brandName} Clockin",
+        'html' => tpl_layout("Nueva {$typeLabel}", $body, $brand),
+        'text' => $text,
+    ];
+}
+
+/**
+ * Despacha notificacion a admins activos de una empresa (o a super_admin si
+ * no se pasa companyId). Fire-and-forget: errores SMTP no rompen el endpoint
+ * que origino la solicitud. opts: request_type, employee_name, company_name,
+ * detail.
+ */
+function notify_admins_new_request(?int $companyId, array $opts): void {
+    try {
+        if ($companyId !== null) {
+            $stmt = Database::pdo()->prepare(
+                "SELECT u.email, u.name, b.id AS brand_id, b.name AS brand_name,
+                        b.logo_url AS brand_logo_url, b.primary_color, b.secondary_color
+                   FROM users u
+                   LEFT JOIN companies c ON c.id = u.company_id
+                   LEFT JOIN brands b ON b.id = c.brand_id
+                  WHERE u.role IN ('admin','super_admin')
+                    AND u.company_id = ?
+                    AND u.is_active = 1 AND u.status = 'active'"
+            );
+            $stmt->execute([$companyId]);
+        } else {
+            $stmt = Database::pdo()->query(
+                "SELECT u.email, u.name, NULL AS brand_id, NULL AS brand_name,
+                        NULL AS brand_logo_url, NULL AS primary_color, NULL AS secondary_color
+                   FROM users u
+                  WHERE u.role = 'super_admin'
+                    AND u.is_active = 1 AND u.status = 'active'"
+            );
+        }
+        $admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!$admins) return;
+
+        foreach ($admins as $admin) {
+            $brand = $admin['brand_id'] ? [
+                'id' => (int)$admin['brand_id'],
+                'name' => $admin['brand_name'],
+                'logo_url' => $admin['brand_logo_url'],
+                'primary_color' => $admin['primary_color'],
+                'secondary_color' => $admin['secondary_color'],
+            ] : null;
+            $admin = user_decrypt_pii($admin);
+            if (empty($admin['email'])) continue;
+            $tpl = mail_template_admin_new_request($opts, $brand);
+            @mail_send($admin['email'], $tpl['subject'], $tpl['html'], $tpl['text']);
+        }
+    } catch (Throwable $e) {
+        error_log('[notify_admins_new_request] ' . $e->getMessage());
+    }
+}

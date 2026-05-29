@@ -149,13 +149,15 @@
         // Modal accesible (ESC, click fuera, role=dialog, foco inicial)
         // =====================================================================
 
-        const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-md', dismissible = true }) => {
+        // Modal con layout flex-col responsivo. Por defecto el contenedor scrollea internamente
+        // (compatible con el comportamiento previo) y el aria-label viene de `title`.
+        // Si se pasa `showHeader`, se agrega un header sticky con el titulo visible y boton de cierre.
+        const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-md', dismissible = true, showHeader = false }) => {
             const dialogRef = useRef(null);
             useEffect(() => {
                 if (!open) return;
                 const onKey = (e) => { if (e.key === 'Escape' && dismissible) onClose(); };
                 document.addEventListener('keydown', onKey);
-                // Scroll lock del body para que el fondo no scrollee en mobile cuando el modal esta abierto.
                 const prevOverflow = document.body.style.overflow;
                 document.body.style.overflow = 'hidden';
                 const t = setTimeout(() => {
@@ -169,12 +171,36 @@
                 };
             }, [open, onClose, dismissible]);
             if (!open) return null;
+            if (showHeader) {
+                return (
+                    <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6"
+                        onMouseDown={(e) => { if (dismissible && e.target === e.currentTarget) onClose(); }}
+                        role="presentation">
+                        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
+                            className={`melius-modal-shell bg-white dark:bg-slate-900 w-full ${maxWidth} rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}>
+                            <div className="melius-modal-header bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-t-3xl px-5 sm:px-8 py-4 flex items-center justify-between gap-3">
+                                <h2 className="font-black text-base sm:text-lg text-slate-800 dark:text-slate-100 font-display truncate">{title}</h2>
+                                {dismissible && (
+                                    <button type="button" onClick={onClose} aria-label="Cerrar"
+                                        className="shrink-0 w-9 h-9 min-h-0 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition-colors">
+                                        <Icon name="X" size={16} />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="melius-modal-body custom-scrollbar px-5 sm:px-8 py-4 sm:py-6">
+                                {children}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
             return (
-                <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6"
+                <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6"
                     onMouseDown={(e) => { if (dismissible && e.target === e.currentTarget) onClose(); }}
                     role="presentation">
                     <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
-                        className={`bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[92vh] overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-10 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}>
+                        className={`bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[min(92vh,calc(100dvh-1rem))] overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`}
+                        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
                         {children}
                     </div>
                 </div>
@@ -790,6 +816,7 @@
         };
 
         const AcceptTermsCard = ({ currentUser, onAccepted, onLogout, theme, onToggleTheme }) => {
+            const { push: toast } = useToast();
             const [terms, setTerms] = useState(null);
             const [loading, setLoading] = useState(true);
             const [accepting, setAccepting] = useState(false);
@@ -812,11 +839,17 @@
                 try {
                     await apiPost('terms/accept', { version: terms.version });
                     toast('success', 'Terminos aceptados.');
-                    // Disparar transicion de vista de forma asincrona para que el
-                    // componente se desmonte fuera de este stack y evitar setAccepting
-                    // en componente ya desmontado (warning React) ademas de garantizar
-                    // que la navegacion ocurra incluso si onAccepted lanza.
-                    setTimeout(() => { try { onAccepted(); } catch (_) {} }, 0);
+                    // onAccepted es async (refresca auth/me + setView).
+                    // Esperamos a que termine antes de soltar el spinner para
+                    // garantizar que la navegacion ocurre dentro del stack
+                    // de este handler. Si onAccepted lanza, lo capturamos
+                    // para mostrar toast y permitir reintento sin re-loguear.
+                    try {
+                        await onAccepted();
+                    } catch (navErr) {
+                        toast('error', navErr?.message || 'No se pudo continuar. Recarga la pagina.');
+                        setAccepting(false);
+                    }
                 } catch (e) {
                     toast('error', e.message || 'No se pudo registrar la aceptacion.');
                     setAccepting(false);
@@ -1450,7 +1483,7 @@
                     </Modal>
 
                     {/* Modal solicitud de vacaciones */}
-                    <Modal open={showVacationModal} onClose={() => setShowVacationModal(false)} title="Solicitar vacaciones" maxWidth="max-w-lg">
+                    <Modal open={showVacationModal} onClose={() => setShowVacationModal(false)} title="Solicitar vacaciones" maxWidth="max-w-lg" showHeader>
                         <VacationForm
                             onSubmit={async (start_date, end_date, reason) => {
                                 try {
@@ -1486,6 +1519,8 @@
             );
         };
 
+        // VacationForm: el Modal renderiza el titulo en su propio header sticky.
+        // Aqui solo el contenido del body. Los botones quedan al final del form.
         const VacationForm = ({ onSubmit, onCancel }) => {
             const today = new Date().toISOString().slice(0, 10);
             const [start, setStart] = useState(today);
@@ -1509,34 +1544,35 @@
             };
             return (
                 <form onSubmit={handle} className="space-y-5">
-                    <div>
-                        <h3 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Solicitud de vacaciones</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Selecciona el rango de fechas. La solicitud queda pendiente hasta que el administrador la apruebe o la rechace.</p>
-                    </div>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Selecciona el rango de fechas. La solicitud queda pendiente hasta que el administrador la apruebe o la rechace.
+                    </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                            <label htmlFor="vac-start" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block">Inicio</label>
+                            <label htmlFor="vac-start" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block mb-1">Inicio</label>
                             <input id="vac-start" type="date" value={start} min={today} onChange={(e) => setStart(e.target.value)} required
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-bold min-h-[44px]" />
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-semibold" />
                         </div>
                         <div>
-                            <label htmlFor="vac-end" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block">Fin</label>
+                            <label htmlFor="vac-end" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block mb-1">Fin</label>
                             <input id="vac-end" type="date" value={end} min={start || today} onChange={(e) => setEnd(e.target.value)} required
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-bold min-h-[44px]" />
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-semibold" />
                         </div>
                     </div>
-                    <div className={`text-sm font-bold ${days > 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-500'}`}>
-                        {days > 0 ? `Total: ${days} día${days === 1 ? '' : 's'} calendario` : 'Rango inválido'}
+                    <div className={`rounded-xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${days > 0 ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/40' : 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 border border-red-100 dark:border-red-900/40'}`}>
+                        <Icon name={days > 0 ? 'Check' : 'AlertTriangle'} size={16} />
+                        {days > 0 ? `Total: ${days} día${days === 1 ? '' : 's'} calendario` : 'Rango inválido — la fecha fin debe ser igual o posterior a la de inicio'}
                     </div>
                     <div>
-                        <label htmlFor="vac-reason" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block">Motivo (opcional)</label>
+                        <label htmlFor="vac-reason" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block mb-1">Motivo (opcional)</label>
                         <textarea id="vac-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows="3" maxLength="500"
                             placeholder="Ej. Viaje familiar, descanso médico, etc."
                             className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-medium resize-none" />
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 ml-2 mt-1">{reason.length}/500</p>
                     </div>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <button type="button" onClick={onCancel} className="flex-1 py-3 rounded-xl font-bold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors order-2 sm:order-1 min-h-[48px]">Cancelar</button>
-                        <button type="submit" disabled={submitting || days <= 0} className="flex-1 py-3 rounded-xl font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 disabled:opacity-60 order-1 sm:order-2 flex items-center justify-center gap-2 min-h-[48px]">
+                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                        <button type="button" onClick={onCancel} disabled={submitting} className="flex-1 py-3 rounded-xl font-bold text-slate-600 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors order-2 sm:order-1 disabled:opacity-60">Cancelar</button>
+                        <button type="submit" disabled={submitting || days <= 0} className="flex-1 py-3 rounded-xl font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 disabled:opacity-60 order-1 sm:order-2 flex items-center justify-center gap-2">
                             {submitting && <Icon name="Spinner" size={18} />}
                             Enviar solicitud
                         </button>
@@ -2824,10 +2860,10 @@
                         ))}
                         {rows.length === 0 && <EmptyState message="Sin marcas aún" />}
                     </div>
-                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva marca" maxWidth="max-w-4xl">
+                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva marca" maxWidth="max-w-4xl" showHeader>
                         <BrandForm onSave={(b, file) => save(b, null, file)} onCancel={() => setCreating(false)} />
                     </Modal>
-                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar marca" maxWidth="max-w-4xl">
+                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar marca" maxWidth="max-w-4xl" showHeader>
                         {editing && <BrandForm initial={editing} onSave={(b, file) => save(b, editing.id, file)} onCancel={() => setEditing(null)} />}
                     </Modal>
                 </div>
@@ -2913,7 +2949,6 @@
 
             return (
                 <form onSubmit={submit} className="space-y-4">
-                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{initial ? 'Editar marca' : 'Nueva marca'}</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                         {/* COLUMNA IZQUIERDA: edicion */}
                         <div className="space-y-4">
@@ -3131,15 +3166,13 @@
                         ))}
                         {rows.length === 0 && <EmptyState message="Sin empresas aún" />}
                     </div>
-                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva empresa" maxWidth="max-w-2xl">
-                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Nueva empresa</h3>
+                    <Modal open={creating} onClose={() => setCreating(false)} title="Nueva empresa" maxWidth="max-w-2xl" showHeader>
                         <CompanyForm onSave={save} onCancel={() => setCreating(false)} />
                     </Modal>
-                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar empresa" maxWidth="max-w-2xl">
-                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Editar empresa</h3>
+                    <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar empresa" maxWidth="max-w-2xl" showHeader>
                         {editing && <CompanyForm initial={editing} onSave={save} onCancel={() => setEditing(null)} />}
                     </Modal>
-                    <Modal open={!!brandingTarget} onClose={() => setBrandingTarget(null)} title="Branding de empresa" maxWidth="max-w-3xl">
+                    <Modal open={!!brandingTarget} onClose={() => setBrandingTarget(null)} title="Branding de empresa" maxWidth="max-w-3xl" showHeader>
                         {brandingTarget && <CompanyBrandingForm company={brandingTarget} onClose={() => setBrandingTarget(null)} onSaved={() => { setBrandingTarget(null); load(); }} />}
                     </Modal>
                 </div>
@@ -3193,8 +3226,8 @@
             return (
                 <div className="space-y-4">
                     <div>
-                        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">Branding de {company.name}</h3>
-                        <p className="text-xs text-slate-500">Sobrescribe el branding heredado (de {inheritedSource}). Deja todos los campos vacíos para volver al heredado.</p>
+                        <p className="text-sm text-slate-700 dark:text-slate-200 font-bold">{company.name}</p>
+                        <p className="text-xs text-slate-500 mt-1">Sobrescribe el branding heredado (de {inheritedSource}). Deja todos los campos vacíos para volver al heredado.</p>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -3298,7 +3331,7 @@
             const roleLabel = payload.role === 'admin' ? 'Administrador' : 'Consultor';
 
             return (
-                <Modal open={open} onClose={onCancel} title="Confirmar invitación" maxWidth="max-w-3xl">
+                <Modal open={open} onClose={onCancel} title="Confirmar invitación" maxWidth="max-w-3xl" showHeader>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Resumen destinatario */}
                         <div className="space-y-3">
@@ -3458,14 +3491,13 @@
         };
 
         const ResendInviteModal = ({ open, target, busy, onConfirm, onCancel }) => (
-            <Modal open={open} onClose={onCancel} title="Reenviar invitación" maxWidth="max-w-lg">
+            <Modal open={open} onClose={onCancel} title="Reenviar invitación" maxWidth="max-w-lg" showHeader>
                 <div className="flex items-start gap-3 mb-4">
                     <div className="shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-purple-500 flex items-center justify-center text-white">
                         <Icon name="Mail" size={22} />
                     </div>
                     <div className="flex-1">
-                        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">Reenviar invitación</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
                             Se generará una nueva password temporal y se enviará un correo de bienvenida actualizado.
                         </p>
                     </div>
@@ -3618,12 +3650,11 @@
                             {data.agents.length === 0 && <EmptyState message="Sin resultados" />}
                         </div>
                     )}
-                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar consultor" maxWidth="max-w-2xl">
-                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar consultor</h3>
+                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar consultor" maxWidth="max-w-2xl" showHeader>
                         <InviteForm defaultRole="consultant" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
                     </Modal>
                     <ResendInviteModal open={!!resending} target={resending} busy={resendBusy} onConfirm={doResend} onCancel={closeResend} />
-                    <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title="Carga masiva CSV" maxWidth="max-w-3xl">
+                    <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title="Carga masiva CSV" maxWidth="max-w-3xl" showHeader>
                         <BulkInviteForm
                             isSuper={isSuper}
                             companies={companies}
@@ -3735,7 +3766,7 @@
                 : `Tu equipo en ${activeGroup?.company.name || 'tu empresa'} está usando ${brandName} Clockin para marcar jornada de forma sencilla.`;
 
             return (
-                <Modal open={open} onClose={onCancel} title="Revisar carga masiva" maxWidth="max-w-4xl">
+                <Modal open={open} onClose={onCancel} title="Revisar carga masiva" maxWidth="max-w-4xl" showHeader>
                     <div className="space-y-4">
                         {/* Resumen */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -3902,8 +3933,6 @@
 
             return (
                 <div className="space-y-4">
-                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">Carga masiva de consultores</h3>
-
                     <div className="rounded-2xl bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-100 dark:border-cyan-900/40 p-4 text-sm text-slate-700 dark:text-slate-200 space-y-3">
                         <div>
                             <p className="font-black text-melius-cyan mb-1">Como funciona en 3 pasos</p>
@@ -4124,12 +4153,10 @@
                         })}
                         {data.agents.length === 0 && <EmptyState message="Sin administradores aún" />}
                     </div>
-                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar administrador" maxWidth="max-w-2xl">
-                        <h3 className="text-xl font-black mb-4 text-slate-800 dark:text-slate-100">Invitar administrador</h3>
+                    <Modal open={inviting} onClose={() => setInviting(false)} title="Invitar administrador" maxWidth="max-w-2xl" showHeader>
                         <InviteForm defaultRole="admin" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
                     </Modal>
-                    <Modal open={!!deleting} onClose={closeDelete} title={deleting?.company_id ? 'Eliminar administrador' : 'Desactivar administrador'} maxWidth="max-w-lg">
-                        <h3 className="text-xl font-black mb-2 text-slate-800 dark:text-slate-100">{deleting?.company_id ? 'Eliminar administrador' : 'Desactivar administrador'}</h3>
+                    <Modal open={!!deleting} onClose={closeDelete} title={deleting?.company_id ? 'Eliminar administrador' : 'Desactivar administrador'} maxWidth="max-w-lg" showHeader>
                         {deleting?.company_id ? (
                             <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
                                 Como el administrador tiene <strong>{deleting.company_name}</strong> asignada, lo convertimos en <strong>consultor</strong> de esa empresa. Conserva acceso para marcar jornada pero pierde sus permisos administrativos. Su histórico queda intacto.

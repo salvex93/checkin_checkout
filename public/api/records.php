@@ -436,6 +436,15 @@ function records_overtime(array $body): never {
         'hours' => $hours, 'record_id' => (int)$rec['id'], 'work_date' => $workDate,
         'geo_country' => $geo['country_code']
     ]);
+    notify_admins_new_request(
+        $u['company_id'] ? (int)$u['company_id'] : null,
+        [
+            'request_type' => 'overtime_new',
+            'employee_name' => $u['name'] ?? '',
+            'company_name' => $u['company_name'] ?? '',
+            'detail' => sprintf('%.1f h del %s', $hours, $workDate),
+        ]
+    );
     ok(['message' => 'Horas extra enviadas a aprobacion.']);
 }
 
@@ -468,6 +477,15 @@ function records_change_company(array $body): never {
         [$u['id'], $u['company_id'], $newCompanyId, 'pending']
     );
     audit_log((int)$u['id'], 'change_company_request', ['new_company_id' => $newCompanyId]);
+    notify_admins_new_request(
+        $u['company_id'] ? (int)$u['company_id'] : null,
+        [
+            'request_type' => 'change_company',
+            'employee_name' => $u['name'] ?? '',
+            'company_name' => $u['company_name'] ?? '',
+            'detail' => 'Quiere cambiar a ' . ($company['name'] ?? "ID {$newCompanyId}"),
+        ]
+    );
     ok(['message' => 'Solicitud enviada a aprobacion.']);
 }
 
@@ -521,6 +539,15 @@ function records_overtime_edit_request(array $body): never {
     audit_log((int)$u['id'], 'overtime_edit_request', [
         'reference_id' => $refId, 'old_hours' => (float)$original['hours'], 'new_hours' => $newHours
     ]);
+    notify_admins_new_request(
+        $u['company_id'] ? (int)$u['company_id'] : null,
+        [
+            'request_type' => 'overtime_edit',
+            'employee_name' => $u['name'] ?? '',
+            'company_name' => $u['company_name'] ?? '',
+            'detail' => sprintf('%.1f h -> %.1f h (solicitud #%d)', (float)$original['hours'], $newHours, $refId),
+        ]
+    );
     ok(['message' => 'Edicion enviada a aprobacion.']);
 }
 

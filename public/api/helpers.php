@@ -151,7 +151,10 @@ function rate_limit_or_block(string $scope, string $key, int $maxHits, int $wind
     try {
         $driver = Database::pdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
         $col = $driver === 'mysql' ? '`key`' : 'key';
-        $cutoff = (new DateTimeImmutable("-{$windowSec} seconds"))->format('Y-m-d H:i:s');
+        // hit_at se persiste con CURRENT_TIMESTAMP (UTC en SQLite, UTC en MySQL si la
+        // sesion esta configurada con time_zone='+00:00'). El cutoff debe calcularse
+        // tambien en UTC para evitar drift por TZ del proceso PHP.
+        $cutoff = (new DateTimeImmutable("-{$windowSec} seconds", new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
 
         $row = db_one(
             "SELECT COUNT(*) AS c FROM rate_limits WHERE scope = ? AND {$col} = ? AND hit_at >= ?",

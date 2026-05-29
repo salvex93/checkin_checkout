@@ -310,7 +310,8 @@ const Modal = ({
   title,
   children,
   maxWidth = 'max-w-md',
-  dismissible = true
+  dismissible = true,
+  showHeader = false
 }) => {
   const dialogRef = useRef(null);
   useEffect(() => {
@@ -332,8 +333,37 @@ const Modal = ({
     };
   }, [open, onClose, dismissible]);
   if (!open) return null;
+  if (showHeader) {
+    return React.createElement("div", {
+      className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6",
+      onMouseDown: e => {
+        if (dismissible && e.target === e.currentTarget) onClose();
+      },
+      role: "presentation"
+    }, React.createElement("div", {
+      ref: dialogRef,
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": title,
+      className: `melius-modal-shell bg-white dark:bg-slate-900 w-full ${maxWidth} rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`
+    }, React.createElement("div", {
+      className: "melius-modal-header bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-t-3xl px-5 sm:px-8 py-4 flex items-center justify-between gap-3"
+    }, React.createElement("h2", {
+      className: "font-black text-base sm:text-lg text-slate-800 dark:text-slate-100 font-display truncate"
+    }, title), dismissible && React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      "aria-label": "Cerrar",
+      className: "shrink-0 w-9 h-9 min-h-0 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition-colors"
+    }, React.createElement(Icon, {
+      name: "X",
+      size: 16
+    }))), React.createElement("div", {
+      className: "melius-modal-body custom-scrollbar px-5 sm:px-8 py-4 sm:py-6"
+    }, children)));
+  }
   return React.createElement("div", {
-    className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-6",
+    className: "fixed inset-0 bg-slate-900/60 dark:bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6",
     onMouseDown: e => {
       if (dismissible && e.target === e.currentTarget) onClose();
     },
@@ -343,7 +373,11 @@ const Modal = ({
     role: "dialog",
     "aria-modal": "true",
     "aria-label": title,
-    className: `bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[92vh] overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-10 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`
+    className: `bg-white dark:bg-slate-900 w-full ${maxWidth} max-h-[min(92vh,calc(100dvh-1rem))] overflow-y-auto custom-scrollbar rounded-2xl sm:rounded-3xl p-5 sm:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 anim-zoom-in`,
+    style: {
+      overscrollBehavior: 'contain',
+      WebkitOverflowScrolling: 'touch'
+    }
   }, children));
 };
 const Select = React.forwardRef(({
@@ -1001,6 +1035,9 @@ const AcceptTermsCard = ({
   theme,
   onToggleTheme
 }) => {
+  const {
+    push: toast
+  } = useToast();
   const [terms, setTerms] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -1025,11 +1062,12 @@ const AcceptTermsCard = ({
         version: terms.version
       });
       toast('success', 'Terminos aceptados.');
-      setTimeout(() => {
-        try {
-          onAccepted();
-        } catch (_) {}
-      }, 0);
+      try {
+        await onAccepted();
+      } catch (navErr) {
+        toast('error', navErr?.message || 'No se pudo continuar. Recarga la pagina.');
+        setAccepting(false);
+      }
     } catch (e) {
       toast('error', e.message || 'No se pudo registrar la aceptacion.');
       setAccepting(false);
@@ -1870,7 +1908,8 @@ const UserDashboard = ({
     open: showVacationModal,
     onClose: () => setShowVacationModal(false),
     title: "Solicitar vacaciones",
-    maxWidth: "max-w-lg"
+    maxWidth: "max-w-lg",
+    showHeader: true
   }, React.createElement(VacationForm, {
     onSubmit: async (start_date, end_date, reason) => {
       try {
@@ -1949,15 +1988,13 @@ const VacationForm = ({
   return React.createElement("form", {
     onSubmit: handle,
     className: "space-y-5"
-  }, React.createElement("div", null, React.createElement("h3", {
-    className: "text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight"
-  }, "Solicitud de vacaciones"), React.createElement("p", {
-    className: "text-sm text-slate-500 dark:text-slate-400 mt-2"
-  }, "Selecciona el rango de fechas. La solicitud queda pendiente hasta que el administrador la apruebe o la rechace.")), React.createElement("div", {
+  }, React.createElement("p", {
+    className: "text-sm text-slate-500 dark:text-slate-400 leading-relaxed"
+  }, "Selecciona el rango de fechas. La solicitud queda pendiente hasta que el administrador la apruebe o la rechace."), React.createElement("div", {
     className: "grid grid-cols-1 sm:grid-cols-2 gap-3"
   }, React.createElement("div", null, React.createElement("label", {
     htmlFor: "vac-start",
-    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block"
+    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block mb-1"
   }, "Inicio"), React.createElement("input", {
     id: "vac-start",
     type: "date",
@@ -1965,10 +2002,10 @@ const VacationForm = ({
     min: today,
     onChange: e => setStart(e.target.value),
     required: true,
-    className: "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-bold min-h-[44px]"
+    className: "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-semibold"
   })), React.createElement("div", null, React.createElement("label", {
     htmlFor: "vac-end",
-    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block"
+    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block mb-1"
   }, "Fin"), React.createElement("input", {
     id: "vac-end",
     type: "date",
@@ -1976,12 +2013,15 @@ const VacationForm = ({
     min: start || today,
     onChange: e => setEnd(e.target.value),
     required: true,
-    className: "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-bold min-h-[44px]"
+    className: "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-semibold"
   }))), React.createElement("div", {
-    className: `text-sm font-bold ${days > 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-500'}`
-  }, days > 0 ? `Total: ${days} día${days === 1 ? '' : 's'} calendario` : 'Rango inválido'), React.createElement("div", null, React.createElement("label", {
+    className: `rounded-xl px-4 py-3 text-sm font-bold flex items-center gap-2 ${days > 0 ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/40' : 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 border border-red-100 dark:border-red-900/40'}`
+  }, React.createElement(Icon, {
+    name: days > 0 ? 'Check' : 'AlertTriangle',
+    size: 16
+  }), days > 0 ? `Total: ${days} día${days === 1 ? '' : 's'} calendario` : 'Rango inválido — la fecha fin debe ser igual o posterior a la de inicio'), React.createElement("div", null, React.createElement("label", {
     htmlFor: "vac-reason",
-    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block"
+    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 tracking-widest block mb-1"
   }, "Motivo (opcional)"), React.createElement("textarea", {
     id: "vac-reason",
     value: reason,
@@ -1990,16 +2030,19 @@ const VacationForm = ({
     maxLength: "500",
     placeholder: "Ej. Viaje familiar, descanso m\xE9dico, etc.",
     className: "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-medium resize-none"
-  })), React.createElement("div", {
-    className: "flex flex-col sm:flex-row gap-3"
+  }), React.createElement("p", {
+    className: "text-[10px] text-slate-400 dark:text-slate-500 ml-2 mt-1"
+  }, reason.length, "/500")), React.createElement("div", {
+    className: "flex flex-col sm:flex-row gap-3 pt-2"
   }, React.createElement("button", {
     type: "button",
     onClick: onCancel,
-    className: "flex-1 py-3 rounded-xl font-bold text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors order-2 sm:order-1 min-h-[48px]"
+    disabled: submitting,
+    className: "flex-1 py-3 rounded-xl font-bold text-slate-600 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors order-2 sm:order-1 disabled:opacity-60"
   }, "Cancelar"), React.createElement("button", {
     type: "submit",
     disabled: submitting || days <= 0,
-    className: "flex-1 py-3 rounded-xl font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 disabled:opacity-60 order-1 sm:order-2 flex items-center justify-center gap-2 min-h-[48px]"
+    className: "flex-1 py-3 rounded-xl font-black text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 disabled:opacity-60 order-1 sm:order-2 flex items-center justify-center gap-2"
   }, submitting && React.createElement(Icon, {
     name: "Spinner",
     size: 18
@@ -3679,7 +3722,8 @@ const BrandsTab = () => {
     open: creating,
     onClose: () => setCreating(false),
     title: "Nueva marca",
-    maxWidth: "max-w-4xl"
+    maxWidth: "max-w-4xl",
+    showHeader: true
   }, React.createElement(BrandForm, {
     onSave: (b, file) => save(b, null, file),
     onCancel: () => setCreating(false)
@@ -3687,7 +3731,8 @@ const BrandsTab = () => {
     open: !!editing,
     onClose: () => setEditing(null),
     title: "Editar marca",
-    maxWidth: "max-w-4xl"
+    maxWidth: "max-w-4xl",
+    showHeader: true
   }, editing && React.createElement(BrandForm, {
     initial: editing,
     onSave: (b, file) => save(b, editing.id, file),
@@ -3785,9 +3830,7 @@ const BrandForm = ({
   return React.createElement("form", {
     onSubmit: submit,
     className: "space-y-4"
-  }, React.createElement("h3", {
-    className: "text-xl font-black text-slate-800 dark:text-slate-100"
-  }, initial ? 'Editar marca' : 'Nueva marca'), React.createElement("div", {
+  }, React.createElement("div", {
     className: "grid grid-cols-1 lg:grid-cols-2 gap-5"
   }, React.createElement("div", {
     className: "space-y-4"
@@ -4159,20 +4202,18 @@ const CompaniesTab = ({
     open: creating,
     onClose: () => setCreating(false),
     title: "Nueva empresa",
-    maxWidth: "max-w-2xl"
-  }, React.createElement("h3", {
-    className: "text-xl font-black mb-4 text-slate-800 dark:text-slate-100"
-  }, "Nueva empresa"), React.createElement(CompanyForm, {
+    maxWidth: "max-w-2xl",
+    showHeader: true
+  }, React.createElement(CompanyForm, {
     onSave: save,
     onCancel: () => setCreating(false)
   })), React.createElement(Modal, {
     open: !!editing,
     onClose: () => setEditing(null),
     title: "Editar empresa",
-    maxWidth: "max-w-2xl"
-  }, React.createElement("h3", {
-    className: "text-xl font-black mb-4 text-slate-800 dark:text-slate-100"
-  }, "Editar empresa"), editing && React.createElement(CompanyForm, {
+    maxWidth: "max-w-2xl",
+    showHeader: true
+  }, editing && React.createElement(CompanyForm, {
     initial: editing,
     onSave: save,
     onCancel: () => setEditing(null)
@@ -4180,7 +4221,8 @@ const CompaniesTab = ({
     open: !!brandingTarget,
     onClose: () => setBrandingTarget(null),
     title: "Branding de empresa",
-    maxWidth: "max-w-3xl"
+    maxWidth: "max-w-3xl",
+    showHeader: true
   }, brandingTarget && React.createElement(CompanyBrandingForm, {
     company: brandingTarget,
     onClose: () => setBrandingTarget(null),
@@ -4239,10 +4281,10 @@ const CompanyBrandingForm = ({
   };
   return React.createElement("div", {
     className: "space-y-4"
-  }, React.createElement("div", null, React.createElement("h3", {
-    className: "text-xl font-black text-slate-800 dark:text-slate-100"
-  }, "Branding de ", company.name), React.createElement("p", {
-    className: "text-xs text-slate-500"
+  }, React.createElement("div", null, React.createElement("p", {
+    className: "text-sm text-slate-700 dark:text-slate-200 font-bold"
+  }, company.name), React.createElement("p", {
+    className: "text-xs text-slate-500 mt-1"
   }, "Sobrescribe el branding heredado (de ", inheritedSource, "). Deja todos los campos vac\xEDos para volver al heredado.")), React.createElement("div", {
     className: "grid grid-cols-1 lg:grid-cols-2 gap-5"
   }, React.createElement("div", {
@@ -4402,7 +4444,8 @@ const InviteConfirmModal = ({
     open: open,
     onClose: onCancel,
     title: "Confirmar invitaci\xF3n",
-    maxWidth: "max-w-3xl"
+    maxWidth: "max-w-3xl",
+    showHeader: true
   }, React.createElement("div", {
     className: "grid grid-cols-1 md:grid-cols-2 gap-4"
   }, React.createElement("div", {
@@ -4667,7 +4710,8 @@ const ResendInviteModal = ({
   open: open,
   onClose: onCancel,
   title: "Reenviar invitaci\xF3n",
-  maxWidth: "max-w-lg"
+  maxWidth: "max-w-lg",
+  showHeader: true
 }, React.createElement("div", {
   className: "flex items-start gap-3 mb-4"
 }, React.createElement("div", {
@@ -4677,10 +4721,8 @@ const ResendInviteModal = ({
   size: 22
 })), React.createElement("div", {
   className: "flex-1"
-}, React.createElement("h3", {
-  className: "text-xl font-black text-slate-800 dark:text-slate-100"
-}, "Reenviar invitaci\xF3n"), React.createElement("p", {
-  className: "text-sm text-slate-600 dark:text-slate-300 mt-1"
+}, React.createElement("p", {
+  className: "text-sm text-slate-600 dark:text-slate-300"
 }, "Se generar\xE1 una nueva password temporal y se enviar\xE1 un correo de bienvenida actualizado."))), target && React.createElement("div", {
   className: "bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-4"
 }, React.createElement("p", {
@@ -4908,10 +4950,9 @@ const AgentsTab = ({
     open: inviting,
     onClose: () => setInviting(false),
     title: "Invitar consultor",
-    maxWidth: "max-w-2xl"
-  }, React.createElement("h3", {
-    className: "text-xl font-black mb-4 text-slate-800 dark:text-slate-100"
-  }, "Invitar consultor"), React.createElement(InviteForm, {
+    maxWidth: "max-w-2xl",
+    showHeader: true
+  }, React.createElement(InviteForm, {
     defaultRole: "consultant",
     isSuper: isSuper,
     onSave: invite,
@@ -4926,7 +4967,8 @@ const AgentsTab = ({
     open: bulkOpen,
     onClose: () => setBulkOpen(false),
     title: "Carga masiva CSV",
-    maxWidth: "max-w-3xl"
+    maxWidth: "max-w-3xl",
+    showHeader: true
   }, React.createElement(BulkInviteForm, {
     isSuper: isSuper,
     companies: companies,
@@ -5056,7 +5098,8 @@ const BulkConfirmModal = ({
     open: open,
     onClose: onCancel,
     title: "Revisar carga masiva",
-    maxWidth: "max-w-4xl"
+    maxWidth: "max-w-4xl",
+    showHeader: true
   }, React.createElement("div", {
     className: "space-y-4"
   }, React.createElement("div", {
@@ -5293,9 +5336,7 @@ const BulkInviteForm = ({
   };
   return React.createElement("div", {
     className: "space-y-4"
-  }, React.createElement("h3", {
-    className: "text-xl font-black text-slate-800 dark:text-slate-100"
-  }, "Carga masiva de consultores"), React.createElement("div", {
+  }, React.createElement("div", {
     className: "rounded-2xl bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-100 dark:border-cyan-900/40 p-4 text-sm text-slate-700 dark:text-slate-200 space-y-3"
   }, React.createElement("div", null, React.createElement("p", {
     className: "font-black text-melius-cyan mb-1"
@@ -5599,10 +5640,9 @@ const AdminsTab = ({
     open: inviting,
     onClose: () => setInviting(false),
     title: "Invitar administrador",
-    maxWidth: "max-w-2xl"
-  }, React.createElement("h3", {
-    className: "text-xl font-black mb-4 text-slate-800 dark:text-slate-100"
-  }, "Invitar administrador"), React.createElement(InviteForm, {
+    maxWidth: "max-w-2xl",
+    showHeader: true
+  }, React.createElement(InviteForm, {
     defaultRole: "admin",
     isSuper: isSuper,
     onSave: invite,
@@ -5611,10 +5651,9 @@ const AdminsTab = ({
     open: !!deleting,
     onClose: closeDelete,
     title: deleting?.company_id ? 'Eliminar administrador' : 'Desactivar administrador',
-    maxWidth: "max-w-lg"
-  }, React.createElement("h3", {
-    className: "text-xl font-black mb-2 text-slate-800 dark:text-slate-100"
-  }, deleting?.company_id ? 'Eliminar administrador' : 'Desactivar administrador'), deleting?.company_id ? React.createElement("p", {
+    maxWidth: "max-w-lg",
+    showHeader: true
+  }, deleting?.company_id ? React.createElement("p", {
     className: "text-sm text-slate-600 dark:text-slate-300 mb-4"
   }, "Como el administrador tiene ", React.createElement("strong", null, deleting.company_name), " asignada, lo convertimos en ", React.createElement("strong", null, "consultor"), " de esa empresa. Conserva acceso para marcar jornada pero pierde sus permisos administrativos. Su hist\xF3rico queda intacto.") : React.createElement("p", {
     className: "text-sm text-slate-600 dark:text-slate-300 mb-4"

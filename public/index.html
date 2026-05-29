@@ -82,6 +82,54 @@
         input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]) {
             min-height: 44px;
         }
+        /* Anti-zoom iOS Safari: font-size < 16px en inputs hace zoom automatico al focus.
+           Aplica solo en pantallas tactiles para no afectar densidad visual en desktop. */
+        @media (hover: none) and (pointer: coarse) {
+            input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
+            select, textarea {
+                font-size: 16px !important;
+            }
+        }
+        /* Date picker icono nativo: invertir en dark mode para que sea visible */
+        html.dark input[type="date"]::-webkit-calendar-picker-indicator,
+        html.dark input[type="time"]::-webkit-calendar-picker-indicator,
+        html.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            filter: invert(1) opacity(0.7);
+        }
+        /* Modal: layout flex-col con header/body/footer sticky para que el formulario
+           no pierda los botones al hacer scroll en pantallas pequenas (mobile horizontal,
+           teclado virtual abierto, etc). */
+        .melius-modal-shell {
+            display: flex;
+            flex-direction: column;
+            max-height: min(92vh, calc(100dvh - 1rem));
+            overscroll-behavior: contain;
+        }
+        @supports not (height: 100dvh) {
+            .melius-modal-shell { max-height: 92vh; }
+        }
+        .melius-modal-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: inherit;
+            border-bottom: 1px solid rgb(241 245 249 / 1);
+        }
+        html.dark .melius-modal-header { border-bottom-color: rgb(30 41 59 / 1); }
+        .melius-modal-body {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+        .melius-modal-footer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            background: inherit;
+            border-top: 1px solid rgb(241 245 249 / 1);
+        }
+        html.dark .melius-modal-footer { border-top-color: rgb(30 41 59 / 1); }
         /* Toast container */
         .toast-stack { position: fixed; top: 1rem; right: 1rem; left: 1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
         @media (min-width: 640px) { .toast-stack { left: auto; max-width: 24rem; } }
