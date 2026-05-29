@@ -102,6 +102,21 @@ $v = file_exists($appJsPath) ? substr(md5_file($appJsPath), 0, 8) : '1';
         html.dark .melius-modal-footer { border-top-color: rgb(30 41 59 / 1); }
         .toast-stack { position: fixed; top: 1rem; right: 1rem; left: 1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
         @media (min-width: 640px) { .toast-stack { left: auto; max-width: 24rem; } }
+        /* Variables CSS para el panel del tour — se invierten en dark mode */
+        :root {
+            --tour-bg: #ffffff;
+            --tour-border: #e2e8f0;
+            --tour-text: #0f172a;
+            --tour-muted: #475569;
+            --tour-btn-bg: #f8fafc;
+        }
+        html.dark {
+            --tour-bg: #0f172a;
+            --tour-border: #1e293b;
+            --tour-text: #f1f5f9;
+            --tour-muted: #94a3b8;
+            --tour-btn-bg: #1e293b;
+        }
     </style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors safe-top safe-bottom">

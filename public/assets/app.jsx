@@ -369,30 +369,29 @@
 
         const TourTooltip = ({ steps, onClose }) => {
             const [idx, setIdx] = useState(0);
-            const [box, setBox] = useState(null);
+            const [highlightBox, setHighlightBox] = useState(null);
 
             useEffect(() => {
                 let raf, timer;
-                const measure = () => {
-                    const step = steps[idx];
-                    if (!step) { setBox(null); return; }
-                    const el = document.querySelector(`[data-tour="${step.sel}"]`);
-                    if (!el) { setBox({ missing: true }); return; }
-                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // Esperar al smooth scroll (~300ms) antes de medir
-                    timer = setTimeout(() => {
-                        raf = requestAnimationFrame(() => {
-                            const r = el.getBoundingClientRect();
-                            const vw = window.innerWidth;
-                            const vh = window.innerHeight;
-                            const outOfView = r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw;
-                            if (outOfView) { setBox({ missing: true }); return; }
-                            setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
-                        });
-                    }, 320);
+                const step = steps[idx];
+                if (!step) { setHighlightBox(null); return; }
+                const el = document.querySelector(`[data-tour="${step.sel}"]`);
+                if (!el) { setHighlightBox(null); return; }
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                timer = setTimeout(() => {
+                    raf = requestAnimationFrame(() => {
+                        const r = el.getBoundingClientRect();
+                        const vw = window.innerWidth;
+                        const vh = window.innerHeight;
+                        const visible = r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0;
+                        setHighlightBox(visible ? { top: r.top, left: r.left, width: r.width, height: r.height } : null);
+                    });
+                }, 350);
+                const onResize = () => {
+                    if (!el) return;
+                    const r = el.getBoundingClientRect();
+                    setHighlightBox({ top: r.top, left: r.left, width: r.width, height: r.height });
                 };
-                measure();
-                const onResize = () => measure();
                 window.addEventListener('resize', onResize);
                 return () => {
                     if (raf) cancelAnimationFrame(raf);
@@ -403,75 +402,86 @@
 
             const step = steps[idx];
             if (!step) return null;
-
             const total = steps.length;
             const isLast = idx === total - 1;
 
-            // Posicionar tooltip respetando viewport. Estimacion conservadora del alto del tooltip = 260px.
-            const TOOLTIP_H = 260;
-            const MARGIN = 16;
-            let tooltipStyle = { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', maxWidth: 'calc(100vw - 32px)', width: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' };
-            if (box && !box.missing) {
-                const vh = window.innerHeight;
-                const spaceBelow = vh - (box.top + box.height);
-                const spaceAbove = box.top;
-                const canFitBelow = spaceBelow >= TOOLTIP_H + MARGIN;
-                const canFitAbove = spaceAbove >= TOOLTIP_H + MARGIN;
-                if (canFitBelow) {
-                    const top = Math.max(MARGIN, Math.min(vh - TOOLTIP_H - MARGIN, box.top + box.height + 12));
-                    tooltipStyle = { position: 'fixed', top: `${top}px`, left: `${MARGIN}px`, right: `${MARGIN}px`, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', maxHeight: `calc(100vh - ${top + MARGIN}px)`, overflowY: 'auto' };
-                } else if (canFitAbove) {
-                    const bottom = Math.max(MARGIN, vh - box.top + 12);
-                    tooltipStyle = { position: 'fixed', bottom: `${bottom}px`, left: `${MARGIN}px`, right: `${MARGIN}px`, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', maxHeight: `calc(100vh - ${bottom + MARGIN}px)`, overflowY: 'auto' };
-                }
-                // Si no cabe arriba ni abajo, mantener el centrado por defecto.
-            }
-
             return (
-                <div className="fixed inset-0 z-[60] pointer-events-none">
-                    {/* Overlay oscuro con recorte sobre el elemento destacado */}
-                    <div className="absolute inset-0 bg-slate-900/70 pointer-events-auto" onClick={onClose}></div>
-                    {box && !box.missing && (
-                        <div
-                            className="absolute rounded-2xl ring-4 ring-melius-cyan ring-offset-2 ring-offset-slate-900/0 pointer-events-none animate-pulse"
-                            style={{ top: box.top - 4, left: box.left - 4, width: box.width + 8, height: box.height + 8 }}
-                        ></div>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 60, pointerEvents: 'none' }}>
+                    {/* Fondo oscuro clickeable para cerrar */}
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.72)', pointerEvents: 'auto' }}
+                        onClick={onClose} />
+                    {/* Recuadro highlight sobre el elemento */}
+                    {highlightBox && (
+                        <div style={{
+                            position: 'absolute', pointerEvents: 'none',
+                            top: highlightBox.top - 6, left: highlightBox.left - 6,
+                            width: highlightBox.width + 12, height: highlightBox.height + 12,
+                            borderRadius: '14px',
+                            boxShadow: '0 0 0 4px #07d6da, 0 0 0 8px rgba(7,214,218,0.25)',
+                        }} />
                     )}
-                    {/* Tooltip */}
-                    <div
-                        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-5 pointer-events-auto anim-zoom-in"
-                        style={tooltipStyle}
-                        role="dialog"
-                        aria-label={step.title}
-                    >
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-melius-cyan">Tutorial · {idx + 1}/{total}</span>
-                            <button onClick={onClose} aria-label="Cerrar tutorial" className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                                <Icon name="X" size={18} />
-                            </button>
-                        </div>
-                        <h3 className="font-black text-lg text-slate-800 dark:text-slate-100 mb-1">{step.title}</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">{step.body}</p>
-                        {box?.missing && (
-                            <p className="text-[11px] text-amber-600 dark:text-amber-400 mb-3 font-bold">
-                                Este apartado no está visible ahora. Salta al siguiente paso o cierra el tutorial.
-                            </p>
-                        )}
-                        <div className="flex items-center justify-between gap-2">
-                            <button onClick={onClose} className="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                                Saltar
-                            </button>
-                            <div className="flex gap-2">
-                                {idx > 0 && (
-                                    <button onClick={() => setIdx(i => i - 1)}
-                                        className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
-                                        Atrás
-                                    </button>
-                                )}
-                                <button onClick={() => isLast ? onClose() : setIdx(i => i + 1)}
-                                    className="px-4 py-2 rounded-xl text-xs font-bold btn-melius">
-                                    {isLast ? 'Terminar' : 'Siguiente'}
+                    {/* Panel fijo en la parte inferior — siempre dentro del viewport */}
+                    <div style={{
+                        position: 'absolute', bottom: 0, left: 0, right: 0,
+                        pointerEvents: 'auto',
+                        padding: '12px 16px 20px',
+                        background: 'transparent',
+                        display: 'flex', justifyContent: 'center',
+                    }}>
+                        <div role="dialog" aria-label={step.title}
+                            className="anim-zoom-in"
+                            style={{
+                                width: '100%', maxWidth: '480px',
+                                background: 'var(--tour-bg, #fff)',
+                                border: '1px solid var(--tour-border, #e2e8f0)',
+                                borderRadius: '16px',
+                                boxShadow: '0 -4px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)',
+                                padding: '20px',
+                                boxSizing: 'border-box',
+                            }}>
+                            {/* Barra de progreso */}
+                            <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
+                                {steps.map((_, i) => (
+                                    <div key={i} style={{
+                                        flex: 1, height: '3px', borderRadius: '99px',
+                                        background: i <= idx ? '#07d6da' : 'rgba(148,163,184,0.3)',
+                                        transition: 'background 0.3s',
+                                    }} />
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#07d6da' }}>
+                                    Paso {idx + 1} de {total}
+                                </span>
+                                <button onClick={onClose} aria-label="Cerrar tutorial"
+                                    style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#94a3b8', minHeight: 'auto', height: 'auto' }}>
+                                    <Icon name="X" size={18} />
                                 </button>
+                            </div>
+                            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 900, fontFamily: 'Poppins,Inter,sans-serif', color: 'var(--tour-text, #0f172a)', lineHeight: 1.3 }}>
+                                {step.title}
+                            </h3>
+                            <p style={{ margin: '0 0 20px', fontSize: '14px', lineHeight: 1.6, color: 'var(--tour-muted, #475569)' }}>
+                                {step.body}
+                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                <button onClick={onClose}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', padding: '8px 0', minHeight: 'auto' }}>
+                                    Saltar
+                                </button>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    {idx > 0 && (
+                                        <button onClick={() => setIdx(i => i - 1)}
+                                            style={{ padding: '10px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'var(--tour-btn-bg, #f8fafc)', color: 'var(--tour-text, #0f172a)', fontWeight: 700, fontSize: '13px', cursor: 'pointer', minHeight: '44px' }}>
+                                            Atrás
+                                        </button>
+                                    )}
+                                    <button onClick={() => isLast ? onClose() : setIdx(i => i + 1)}
+                                        className="btn-melius"
+                                        style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', fontWeight: 800, fontSize: '13px', cursor: 'pointer', minHeight: '44px' }}>
+                                        {isLast ? 'Terminar' : 'Siguiente'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

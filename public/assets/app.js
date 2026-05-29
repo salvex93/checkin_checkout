@@ -605,49 +605,47 @@ const TourTooltip = ({
   onClose
 }) => {
   const [idx, setIdx] = useState(0);
-  const [box, setBox] = useState(null);
+  const [highlightBox, setHighlightBox] = useState(null);
   useEffect(() => {
     let raf, timer;
-    const measure = () => {
-      const step = steps[idx];
-      if (!step) {
-        setBox(null);
-        return;
-      }
-      const el = document.querySelector(`[data-tour="${step.sel}"]`);
-      if (!el) {
-        setBox({
-          missing: true
-        });
-        return;
-      }
-      el.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
+    const step = steps[idx];
+    if (!step) {
+      setHighlightBox(null);
+      return;
+    }
+    const el = document.querySelector(`[data-tour="${step.sel}"]`);
+    if (!el) {
+      setHighlightBox(null);
+      return;
+    }
+    el.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest'
+    });
+    timer = setTimeout(() => {
+      raf = requestAnimationFrame(() => {
+        const r = el.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const visible = r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0;
+        setHighlightBox(visible ? {
+          top: r.top,
+          left: r.left,
+          width: r.width,
+          height: r.height
+        } : null);
       });
-      timer = setTimeout(() => {
-        raf = requestAnimationFrame(() => {
-          const r = el.getBoundingClientRect();
-          const vw = window.innerWidth;
-          const vh = window.innerHeight;
-          const outOfView = r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw;
-          if (outOfView) {
-            setBox({
-              missing: true
-            });
-            return;
-          }
-          setBox({
-            top: r.top,
-            left: r.left,
-            width: r.width,
-            height: r.height
-          });
-        });
-      }, 320);
+    }, 350);
+    const onResize = () => {
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setHighlightBox({
+        top: r.top,
+        left: r.left,
+        width: r.width,
+        height: r.height
+      });
     };
-    measure();
-    const onResize = () => measure();
     window.addEventListener('resize', onResize);
     return () => {
       if (raf) cancelAnimationFrame(raf);
@@ -659,101 +657,173 @@ const TourTooltip = ({
   if (!step) return null;
   const total = steps.length;
   const isLast = idx === total - 1;
-  const TOOLTIP_H = 260;
-  const MARGIN = 16;
-  let tooltipStyle = {
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    maxWidth: 'calc(100vw - 32px)',
-    width: 'calc(100vw - 32px)',
-    maxHeight: 'calc(100vh - 32px)',
-    overflowY: 'auto'
-  };
-  if (box && !box.missing) {
-    const vh = window.innerHeight;
-    const spaceBelow = vh - (box.top + box.height);
-    const spaceAbove = box.top;
-    const canFitBelow = spaceBelow >= TOOLTIP_H + MARGIN;
-    const canFitAbove = spaceAbove >= TOOLTIP_H + MARGIN;
-    if (canFitBelow) {
-      const top = Math.max(MARGIN, Math.min(vh - TOOLTIP_H - MARGIN, box.top + box.height + 12));
-      tooltipStyle = {
-        position: 'fixed',
-        top: `${top}px`,
-        left: `${MARGIN}px`,
-        right: `${MARGIN}px`,
-        maxWidth: '420px',
-        marginLeft: 'auto',
-        marginRight: 'auto',
-        maxHeight: `calc(100vh - ${top + MARGIN}px)`,
-        overflowY: 'auto'
-      };
-    } else if (canFitAbove) {
-      const bottom = Math.max(MARGIN, vh - box.top + 12);
-      tooltipStyle = {
-        position: 'fixed',
-        bottom: `${bottom}px`,
-        left: `${MARGIN}px`,
-        right: `${MARGIN}px`,
-        maxWidth: '420px',
-        marginLeft: 'auto',
-        marginRight: 'auto',
-        maxHeight: `calc(100vh - ${bottom + MARGIN}px)`,
-        overflowY: 'auto'
-      };
-    }
-  }
   return React.createElement("div", {
-    className: "fixed inset-0 z-[60] pointer-events-none"
-  }, React.createElement("div", {
-    className: "absolute inset-0 bg-slate-900/70 pointer-events-auto",
-    onClick: onClose
-  }), box && !box.missing && React.createElement("div", {
-    className: "absolute rounded-2xl ring-4 ring-melius-cyan ring-offset-2 ring-offset-slate-900/0 pointer-events-none animate-pulse",
     style: {
-      top: box.top - 4,
-      left: box.left - 4,
-      width: box.width + 8,
-      height: box.height + 8
+      position: 'fixed',
+      inset: 0,
+      zIndex: 60,
+      pointerEvents: 'none'
+    }
+  }, React.createElement("div", {
+    style: {
+      position: 'absolute',
+      inset: 0,
+      background: 'rgba(15,23,42,0.72)',
+      pointerEvents: 'auto'
+    },
+    onClick: onClose
+  }), highlightBox && React.createElement("div", {
+    style: {
+      position: 'absolute',
+      pointerEvents: 'none',
+      top: highlightBox.top - 6,
+      left: highlightBox.left - 6,
+      width: highlightBox.width + 12,
+      height: highlightBox.height + 12,
+      borderRadius: '14px',
+      boxShadow: '0 0 0 4px #07d6da, 0 0 0 8px rgba(7,214,218,0.25)'
     }
   }), React.createElement("div", {
-    className: "bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-5 pointer-events-auto anim-zoom-in",
-    style: tooltipStyle,
-    role: "dialog",
-    "aria-label": step.title
+    style: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      pointerEvents: 'auto',
+      padding: '12px 16px 20px',
+      background: 'transparent',
+      display: 'flex',
+      justifyContent: 'center'
+    }
   }, React.createElement("div", {
-    className: "flex items-center justify-between mb-2"
+    role: "dialog",
+    "aria-label": step.title,
+    className: "anim-zoom-in",
+    style: {
+      width: '100%',
+      maxWidth: '480px',
+      background: 'var(--tour-bg, #fff)',
+      border: '1px solid var(--tour-border, #e2e8f0)',
+      borderRadius: '16px',
+      boxShadow: '0 -4px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)',
+      padding: '20px',
+      boxSizing: 'border-box'
+    }
+  }, React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '4px',
+      marginBottom: '16px'
+    }
+  }, steps.map((_, i) => React.createElement("div", {
+    key: i,
+    style: {
+      flex: 1,
+      height: '3px',
+      borderRadius: '99px',
+      background: i <= idx ? '#07d6da' : 'rgba(148,163,184,0.3)',
+      transition: 'background 0.3s'
+    }
+  }))), React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: '12px',
+      marginBottom: '8px'
+    }
   }, React.createElement("span", {
-    className: "text-[10px] font-black uppercase tracking-widest text-melius-cyan"
-  }, "Tutorial \xB7 ", idx + 1, "/", total), React.createElement("button", {
+    style: {
+      fontSize: '11px',
+      fontWeight: 800,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      color: '#07d6da'
+    }
+  }, "Paso ", idx + 1, " de ", total), React.createElement("button", {
     onClick: onClose,
     "aria-label": "Cerrar tutorial",
-    className: "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+    style: {
+      flexShrink: 0,
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      padding: '2px',
+      color: '#94a3b8',
+      minHeight: 'auto',
+      height: 'auto'
+    }
   }, React.createElement(Icon, {
     name: "X",
     size: 18
   }))), React.createElement("h3", {
-    className: "font-black text-lg text-slate-800 dark:text-slate-100 mb-1"
+    style: {
+      margin: '0 0 8px',
+      fontSize: '18px',
+      fontWeight: 900,
+      fontFamily: 'Poppins,Inter,sans-serif',
+      color: 'var(--tour-text, #0f172a)',
+      lineHeight: 1.3
+    }
   }, step.title), React.createElement("p", {
-    className: "text-sm text-slate-600 dark:text-slate-300 mb-4"
-  }, step.body), box?.missing && React.createElement("p", {
-    className: "text-[11px] text-amber-600 dark:text-amber-400 mb-3 font-bold"
-  }, "Este apartado no est\xE1 visible ahora. Salta al siguiente paso o cierra el tutorial."), React.createElement("div", {
-    className: "flex items-center justify-between gap-2"
+    style: {
+      margin: '0 0 20px',
+      fontSize: '14px',
+      lineHeight: 1.6,
+      color: 'var(--tour-muted, #475569)'
+    }
+  }, step.body), React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '8px'
+    }
   }, React.createElement("button", {
     onClick: onClose,
-    className: "text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+    style: {
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      fontSize: '12px',
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
+      color: '#94a3b8',
+      padding: '8px 0',
+      minHeight: 'auto'
+    }
   }, "Saltar"), React.createElement("div", {
-    className: "flex gap-2"
+    style: {
+      display: 'flex',
+      gap: '8px'
+    }
   }, idx > 0 && React.createElement("button", {
     onClick: () => setIdx(i => i - 1),
-    className: "px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700"
+    style: {
+      padding: '10px 20px',
+      borderRadius: '10px',
+      border: '1px solid #e2e8f0',
+      background: 'var(--tour-btn-bg, #f8fafc)',
+      color: 'var(--tour-text, #0f172a)',
+      fontWeight: 700,
+      fontSize: '13px',
+      cursor: 'pointer',
+      minHeight: '44px'
+    }
   }, "Atr\xE1s"), React.createElement("button", {
     onClick: () => isLast ? onClose() : setIdx(i => i + 1),
-    className: "px-4 py-2 rounded-xl text-xs font-bold btn-melius"
-  }, isLast ? 'Terminar' : 'Siguiente')))));
+    className: "btn-melius",
+    style: {
+      padding: '10px 24px',
+      borderRadius: '10px',
+      border: 'none',
+      fontWeight: 800,
+      fontSize: '13px',
+      cursor: 'pointer',
+      minHeight: '44px'
+    }
+  }, isLast ? 'Terminar' : 'Siguiente'))))));
 };
 const DEFAULT_BRANDING = {
   product_name: 'Melius Clockin',
