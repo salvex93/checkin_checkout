@@ -410,14 +410,15 @@
                     {/* Fondo oscuro clickeable para cerrar */}
                     <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.72)', pointerEvents: 'auto' }}
                         onClick={onClose} />
-                    {/* Recuadro highlight sobre el elemento */}
+                    {/* Recuadro highlight — position:fixed para coincidir con getBoundingClientRect en mobile */}
                     {highlightBox && (
                         <div style={{
-                            position: 'absolute', pointerEvents: 'none',
+                            position: 'fixed', pointerEvents: 'none',
                             top: highlightBox.top - 6, left: highlightBox.left - 6,
                             width: highlightBox.width + 12, height: highlightBox.height + 12,
                             borderRadius: '14px',
                             boxShadow: '0 0 0 4px #07d6da, 0 0 0 8px rgba(7,214,218,0.25)',
+                            zIndex: 61,
                         }} />
                     )}
                     {/* Panel fijo en la parte inferior — siempre dentro del viewport */}
@@ -985,7 +986,31 @@
             );
         };
 
-        const LoginCard = ({ onSubmit, submitting, onGoForgot, theme, onToggleTheme }) => (
+        const LoginCard = ({ onSubmit, submitting, onGoForgot, theme, onToggleTheme }) => {
+            const [captcha, setCaptcha] = useState(null);         // { question, expires_in }
+            const [captchaAnswer, setCaptchaAnswer] = useState('');
+            const [captchaVerified, setCaptchaVerified] = useState(false);
+            const [captchaError, setCaptchaError] = useState('');
+            const [verifying, setVerifying] = useState(false);
+
+            useEffect(() => {
+                apiFetch('auth/captcha').then(d => setCaptcha(d)).catch(() => {});
+            }, []);
+
+            const handleVerifyCaptcha = async () => {
+                if (!captchaAnswer.trim()) return;
+                setVerifying(true); setCaptchaError('');
+                try {
+                    await apiPost('auth/captcha/verify', { answer: parseInt(captchaAnswer, 10) });
+                    setCaptchaVerified(true);
+                } catch (e) {
+                    setCaptchaError(e.message || 'Respuesta incorrecta.');
+                    // Recargar challenge tras fallo
+                    apiFetch('auth/captcha').then(d => { setCaptcha(d); setCaptchaAnswer(''); }).catch(() => {});
+                } finally { setVerifying(false); }
+            };
+
+            return (
             <div className="max-w-md w-full bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-12 rounded-[2rem] sm:rounded-[3rem] md:rounded-[4rem] shadow-2xl dark:shadow-black/50 border border-slate-100 dark:border-slate-800 flex flex-col items-center anim-zoom-in relative">
                 <div className="absolute top-4 right-4 sm:top-6 sm:right-6"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
                 <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-2xl sm:rounded-[2rem] flex items-center justify-center mb-6 sm:mb-8 ring-melius bg-white dark:bg-slate-800 p-2">
@@ -994,23 +1019,46 @@
                 <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tighter text-center font-display">Clock System</h1>
                 <p className="text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-[9px] sm:text-[10px] mb-8 sm:mb-12 text-center">Melius Services Portal</p>
 
-                <form onSubmit={onSubmit} className="w-full space-y-4 sm:space-y-5">
-                    <div className="space-y-1">
-                        <label htmlFor="login-email" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block">Email Corporativo</label>
-                        <input id="login-email" name="email" type="email" placeholder="usuario@melius.com" required autoComplete="email"
-                            className="w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
+                {!captchaVerified ? (
+                    <div className="w-full space-y-4">
+                        <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-5 text-center border border-slate-100 dark:border-slate-700">
+                            <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest mb-3">Verificación de seguridad</p>
+                            {captcha ? (
+                                <p className="text-2xl font-black text-slate-800 dark:text-slate-100 font-display mb-4">{captcha.question}</p>
+                            ) : (
+                                <div className="h-8 flex items-center justify-center"><Icon name="Spinner" size={20} /></div>
+                            )}
+                            <input type="number" value={captchaAnswer} onChange={e => setCaptchaAnswer(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleVerifyCaptcha()}
+                                placeholder="Tu respuesta"
+                                className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-bold text-center text-lg mb-3" />
+                            {captchaError && <p className="text-red-500 text-xs font-bold mb-3">{captchaError}</p>}
+                            <button onClick={handleVerifyCaptcha} disabled={verifying || !captchaAnswer.trim()}
+                                className="w-full btn-melius py-4 rounded-2xl font-black text-base ring-melius disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-2">
+                                {verifying && <Icon name="Spinner" size={18} />}
+                                {verifying ? 'Verificando…' : 'Continuar'}
+                            </button>
+                        </div>
                     </div>
-                    <div className="space-y-1">
-                        <label htmlFor="login-password" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block">Contraseña</label>
-                        <input id="login-password" name="password" type="password" required autoComplete="current-password" minLength="1"
-                            className="w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
-                    </div>
-                    <button type="submit" disabled={submitting}
-                        className="w-full btn-melius py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black text-lg sm:text-xl ring-melius transition-all active:scale-95 no-select disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-3">
-                        {submitting && <Icon name="Spinner" size={20} />}
-                        {submitting ? 'Validando' : 'Entrar'}
-                    </button>
-                </form>
+                ) : (
+                    <form onSubmit={onSubmit} className="w-full space-y-4 sm:space-y-5">
+                        <div className="space-y-1">
+                            <label htmlFor="login-email" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block">Email Corporativo</label>
+                            <input id="login-email" name="email" type="email" placeholder="usuario@melius.com" required autoComplete="email"
+                                className="w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
+                        </div>
+                        <div className="space-y-1">
+                            <label htmlFor="login-password" className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block">Contraseña</label>
+                            <input id="login-password" name="password" type="password" required autoComplete="current-password" minLength="1"
+                                className="w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium" />
+                        </div>
+                        <button type="submit" disabled={submitting}
+                            className="w-full btn-melius py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black text-lg sm:text-xl ring-melius transition-all active:scale-95 no-select disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-3">
+                            {submitting && <Icon name="Spinner" size={20} />}
+                            {submitting ? 'Validando…' : 'Entrar'}
+                        </button>
+                    </form>
+                )}
 
                 <div className="mt-8 sm:mt-12 flex flex-col items-center gap-4 sm:gap-5">
                     <button onClick={onGoForgot} className="text-blue-600 dark:text-blue-300 font-black text-xs uppercase tracking-widest hover:underline transition-all">
@@ -1021,7 +1069,8 @@
                     </p>
                 </div>
             </div>
-        );
+            );
+        };
 
         // Carcasa visual reutilizable para las vistas de password.
         const PasswordCard = ({ title, subtitle, children, theme, onToggleTheme }) => (
@@ -4671,6 +4720,62 @@
                 </div>
             </div>
         );
+
+        // =====================================================================
+        // DOM Hardening — detecta manipulacion del arbol React y reporta al backend.
+        // MutationObserver vigila el nodo #root: si alguien inyecta nodos script,
+        // modifica data-attributes criticos o elimina el contenedor, reporta.
+        // =====================================================================
+        (function domHardening() {
+            const rootEl = document.getElementById('root');
+            if (!rootEl || typeof MutationObserver === 'undefined') return;
+
+            let reportThrottle = null;
+            const report = (detail) => {
+                if (reportThrottle) return;
+                reportThrottle = setTimeout(() => { reportThrottle = null; }, 10000);
+                try {
+                    fetch('/api/anti-bot/dom-report', {
+                        method: 'POST', credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ detail: detail.slice(0, 500) }),
+                    }).catch(() => {});
+                } catch (_) {}
+            };
+
+            const observer = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    // Inyeccion de nodo script externo
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType === 1 && node.tagName === 'SCRIPT') {
+                            report('script_injection: ' + (node.src || node.textContent.slice(0, 100)));
+                            node.remove();
+                        }
+                    }
+                    // Modificacion de atributos criticos del root
+                    if (m.type === 'attributes' && m.target === rootEl) {
+                        report('root_attr_modified: ' + m.attributeName);
+                    }
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-reactroot', 'id', 'class'] });
+
+            // Detectar DevTools abierto via timing (heuristica no invasiva)
+            let devtoolsOpen = false;
+            const devCheck = () => {
+                const t = performance.now();
+                // eslint-disable-next-line no-debugger
+                debugger;
+                if (performance.now() - t > 80 && !devtoolsOpen) {
+                    devtoolsOpen = true;
+                    report('devtools_open_detected');
+                }
+            };
+            // Solo en produccion — no interferir con desarrollo
+            if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                setInterval(devCheck, 30000);
+            }
+        })();
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ToastProvider><BrandingProvider><App /></BrandingProvider></ToastProvider>);

@@ -101,6 +101,23 @@ class Database {
         ");
         self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_vac_user ON vacation_requests(user_id)");
         self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_vac_status ON vacation_requests(status, start_date)");
+        self::$pdo->exec("
+            CREATE TABLE IF NOT EXISTS security_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL CHECK (event_type IN ('scraping','dom_manipulation','brute_force','bot_blocked','ip_blocked')),
+                ip TEXT NOT NULL,
+                user_agent TEXT NULL,
+                uri TEXT NULL,
+                user_id INTEGER NULL,
+                detail TEXT NULL,
+                reviewed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+        ");
+        self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_secevt_type ON security_events(event_type, created_at)");
+        self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_secevt_ip ON security_events(ip, created_at)");
+        self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_secevt_reviewed ON security_events(reviewed, created_at)");
     }
 }
 

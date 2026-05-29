@@ -358,3 +358,47 @@ function auth_reset_password(array $body): never {
     audit_log($userId, 'reset_password_success');
     ok(['message' => 'Contrasena restablecida. Inicia sesion.']);
 }
+
+// =====================================================================
+// CAPTCHA matematico server-side (suma/resta de 1 a 9, sin dependencias externas).
+// El challenge se genera en sesion PHP. El frontend lo muestra como pregunta
+// y envia la respuesta. Un bot que no mantenga cookies de sesion no puede resolver.
+// =====================================================================
+
+/**
+ * GET auth/captcha — genera un challenge nuevo y lo guarda en sesion.
+ * Devuelve solo la pregunta visible; la respuesta correcta nunca sale al cliente.
+ */
+function auth_captcha_generate(): never {
+    $a = random_int(1, 9);
+    $b = random_int(1, 9);
+    $ops = ['+', '-'];
+    $op  = $ops[random_int(0, 1)];
+    $answer = $op === '+' ? $a + $b : $a - $b;
+    $_SESSION['_captcha_answer'] = $answer;
+    $_SESSION['_captcha_ts']     = time();
+    ok(['question' => "{$a} {$op} {$b} = ?", 'expires_in' => 300]);
+}
+
+/**
+ * POST auth/captcha/verify — verifica la respuesta del usuario.
+ * El challenge expira en 5 minutos. Un intento fallido invalida el challenge.
+ */
+function auth_captcha_verify(array $body): never {
+    $answer = (int)($body['answer'] ?? PHP_INT_MIN);
+    $stored = $_SESSION['_captcha_answer'] ?? null;
+    $ts     = (int)($_SESSION['_captcha_ts'] ?? 0);
+
+    // Limpiar challenge siempre (un intento = consume el challenge)
+    unset($_SESSION['_captcha_answer'], $_SESSION['_captcha_ts']);
+
+    if ($stored === null || (time() - $ts) > 300) {
+        err('CAPTCHA_EXPIRED', 'El codigo ha expirado. Recarga la pagina.', 400);
+    }
+    if ($answer !== (int)$stored) {
+        err('CAPTCHA_INVALID', 'Respuesta incorrecta. Intenta de nuevo.', 400);
+    }
+    // Marcar sesion como captcha verificado para este flujo de login
+    $_SESSION['_captcha_verified_at'] = time();
+    ok(['verified' => true]);
+}

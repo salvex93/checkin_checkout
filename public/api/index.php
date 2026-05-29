@@ -74,6 +74,10 @@ foreach ($rateLimitedPrefixes as $prefix) {
         break;
     }
 }
+// Bloqueo por historial de eventos de seguridad acumulados en DB.
+if (!in_array($endpoint, ['csrf', 'branding', 'auth/login', 'auth/captcha'], true)) {
+    anti_bot_check_ip_block();
+}
 
 // Parser de paths con id: admin/companies/123 -> ('admin/companies', 123)
 // admin/brands/123/logo -> ('admin/brands', 123, 'logo')
@@ -108,6 +112,10 @@ if (preg_match('#^admin/email-templates/(\d+)/([a-z_]+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
+} elseif (preg_match('#^(admin/security-events)/(\d+)/(review)$#', $endpoint, $m)) {
+    $endpointBase = $m[1];
+    $endpointId = (int)$m[2];
+    $endpointAction = $m[3];
 } elseif (preg_match('#^(admin/companies|admin/users|admin/brands|admin/dashboard/company|vacations)/(\d+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
@@ -136,6 +144,9 @@ try {
     // fallthrough silencioso si algun handler futuro no llama exit.
     if ($endpointId !== null && $endpointAction !== null) {
         switch ("{$method} {$endpointBase}/{$endpointAction}") {
+            case 'POST admin/security-events/review':
+                admin_security_events_review($endpointId);
+                return;
             case 'POST admin/brands/logo':
                 admin_brands_upload_logo($endpointId);
                 return;
@@ -188,6 +199,20 @@ try {
     }
 
     switch ("{$method} {$endpoint}") {
+        // --- CAPTCHA matematico (generacion y verificacion) ---
+        case 'GET auth/captcha':
+            auth_captcha_generate();
+        case 'POST auth/captcha/verify':
+            auth_captcha_verify($body);
+
+        // --- Reporte de manipulacion DOM desde el frontend ---
+        case 'POST anti-bot/dom-report':
+            anti_bot_dom_report($body);
+
+        // --- Eventos de seguridad (admin) ---
+        case 'GET admin/security-events':
+            admin_security_events_list();
+
         // --- CSRF token ---
         // Headers explicitos para evitar que Cloudflare/cualquier intermediario
         // cachee la respuesta y entregue el mismo token a varios usuarios.

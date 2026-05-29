@@ -302,6 +302,23 @@ CREATE TABLE IF NOT EXISTS vacation_requests (
 CREATE INDEX IF NOT EXISTS idx_vac_user ON vacation_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_vac_status ON vacation_requests(status, start_date);
 
+CREATE TABLE IF NOT EXISTS security_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL CHECK (event_type IN ('scraping','dom_manipulation','brute_force','bot_blocked','ip_blocked')),
+    ip TEXT NOT NULL,
+    user_agent TEXT NULL,
+    uri TEXT NULL,
+    user_id INTEGER NULL,
+    detail TEXT NULL,
+    reviewed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_secevt_type ON security_events(event_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_secevt_ip ON security_events(ip, created_at);
+CREATE INDEX IF NOT EXISTS idx_secevt_reviewed ON security_events(reviewed, created_at);
+
 -- Seed marcas paraguas
 INSERT OR IGNORE INTO brands (slug, name, logo_url, primary_color, secondary_color) VALUES
     ('melius',  'Melius Services',  '/assets/brands/melius.webp',  '#07d6da', '#9909fe'),

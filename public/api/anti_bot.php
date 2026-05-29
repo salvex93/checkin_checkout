@@ -167,3 +167,152 @@ function anti_bot_verify(int $userId, array $body): void {
     anti_bot_require_human_signal($body);
     anti_bot_min_gap_between_actions($userId);
 }
+
+// =====================================================================
+// Persistencia de eventos de seguridad en DB + bloqueo por IP
+// =====================================================================
+
+const ANTI_BOT_IP_BLOCK_THRESHOLD = 5;   // hits en ventana
+const ANTI_BOT_IP_BLOCK_WINDOW_S  = 600; // 10 minutos
+const ANTI_BOT_IP_BLOCK_DURATION_S = 3600; // 1 hora bloqueada
+
+/**
+ * Persiste un evento de seguridad en la tabla security_events y notifica
+ * a admins activos si el tipo es scraping, dom_manipulation o ip_blocked.
+ */
+function anti_bot_record_event(string $eventType, string $detail, ?int $userId = null): void {
+    try {
+        $ip  = substr((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'), 0, 45);
+        $ua  = substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
+        $uri = substr((string)($_SERVER['REQUEST_URI'] ?? ''), 0, 255);
+        db_exec(
+            "INSERT INTO security_events (event_type, ip, user_agent, uri, user_id, detail)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            [$eventType, $ip, $ua ?: null, $uri ?: null, $userId, $detail]
+        );
+        if (in_array($eventType, ['scraping', 'dom_manipulation', 'ip_blocked'], true)) {
+            anti_bot_notify_admins($eventType, $ip, $detail, $userId);
+        }
+    } catch (Throwable $e) {
+        error_log('[anti-bot] record_event failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Verifica si la IP esta bloqueada (demasiados eventos en la ventana).
+ * Si supera el umbral registra ip_blocked y rechaza la peticion.
+ */
+function anti_bot_check_ip_block(): void {
+    $ip  = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($ip === '') return;
+    try {
+        $driver = Database::pdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $cutoff = (new DateTimeImmutable('-' . ANTI_BOT_IP_BLOCK_WINDOW_S . ' seconds', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
+        $count = (int)db_one(
+            "SELECT COUNT(*) AS c FROM security_events WHERE ip = ? AND created_at >= ?",
+            [$ip, $cutoff]
+        )['c'];
+        if ($count >= ANTI_BOT_IP_BLOCK_THRESHOLD) {
+            anti_bot_record_event('ip_blocked', "IP bloqueada por {$count} eventos en " . ANTI_BOT_IP_BLOCK_WINDOW_S . "s");
+            err('IP_BLOCKED', 'Demasiadas solicitudes sospechosas. Intenta mas tarde.', 429);
+        }
+    } catch (Throwable $e) {
+        error_log('[anti-bot] check_ip_block failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Notifica a admins activos sobre un evento de seguridad. Fire-and-forget.
+ */
+function anti_bot_notify_admins(string $eventType, string $ip, string $detail, ?int $userId): void {
+    try {
+        $typeLabels = [
+            'scraping'        => 'Scraping detectado',
+            'dom_manipulation'=> 'Manipulacion del DOM',
+            'ip_blocked'      => 'IP bloqueada',
+        ];
+        $label = $typeLabels[$eventType] ?? $eventType;
+        $admins = db_all(
+            "SELECT u.email, u.name FROM users u
+              WHERE u.role IN ('admin','super_admin') AND u.is_active = 1 AND u.status = 'active'
+              LIMIT 10"
+        );
+        foreach ($admins as $admin) {
+            $admin = user_decrypt_pii($admin);
+            if (empty($admin['email'])) continue;
+            $subject = "[Seguridad] {$label} — Melius Clockin";
+            $body    = "<p>Se detecto un evento de seguridad en la aplicacion.</p>"
+                     . "<table cellpadding='0' cellspacing='0' style='width:100%;border-collapse:collapse;'>"
+                     . "<tr><td style='padding:6px 0;color:#475569;'>Tipo</td><td style='padding:6px 0;font-weight:700;'>{$label}</td></tr>"
+                     . "<tr><td style='padding:6px 0;color:#475569;'>IP</td><td style='padding:6px 0;font-family:monospace;'>{$ip}</td></tr>"
+                     . "<tr><td style='padding:6px 0;color:#475569;'>Detalle</td><td style='padding:6px 0;'>" . htmlspecialchars($detail, ENT_QUOTES, 'UTF-8') . "</td></tr>"
+                     . "</table>"
+                     . "<p style='margin-top:16px;'><a href='" . app_base_url() . "/?tab=security' style='display:inline-block;padding:10px 20px;background:linear-gradient(135deg,#07d6da,#9909fe);color:#fff;font-weight:700;text-decoration:none;border-radius:8px;'>Ver en panel</a></p>";
+            $text    = "{$label}\nIP: {$ip}\nDetalle: {$detail}\n";
+            @mail_send($admin['email'], $subject, tpl_layout($label, $body, null), $text);
+        }
+    } catch (Throwable $e) {
+        error_log('[anti-bot] notify_admins failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Endpoint POST anti-bot/dom-report — el frontend reporta manipulacion del DOM.
+ * No requiere sesion activa (el atacante puede no estar logueado).
+ */
+function anti_bot_dom_report(array $body): never {
+    $detail  = substr((string)($body['detail'] ?? 'sin detalle'), 0, 500);
+    $userId  = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+    anti_bot_record_event('dom_manipulation', $detail, $userId);
+    ok(['received' => true]);
+}
+
+/**
+ * GET admin/security-events — lista eventos de seguridad para el panel admin.
+ * Filtra por tipo y estado de revision.
+ */
+function admin_security_events_list(): never {
+    $u = require_login();
+    if (!in_array($u['role'], ['admin', 'super_admin'], true)) {
+        err('FORBIDDEN', 'Solo admins.', 403);
+    }
+    $type     = $_GET['type'] ?? 'all';
+    $reviewed = $_GET['reviewed'] ?? 'false';
+    $where    = [];
+    $params   = [];
+    $allowed  = ['scraping', 'dom_manipulation', 'brute_force', 'bot_blocked', 'ip_blocked', 'all'];
+    if (in_array($type, $allowed, true) && $type !== 'all') {
+        $where[]  = 'event_type = ?';
+        $params[] = $type;
+    }
+    if ($reviewed === 'false') {
+        $where[]  = 'reviewed = 0';
+    }
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    $rows = db_all(
+        "SELECT s.id, s.event_type, s.ip, s.user_agent, s.uri, s.detail,
+                s.reviewed, s.created_at,
+                u.name AS user_name, u.email AS user_email
+           FROM security_events s
+           LEFT JOIN users u ON u.id = s.user_id
+           {$whereSql}
+          ORDER BY s.created_at DESC
+          LIMIT 200",
+        $params
+    );
+    $unreviewed = (int)(db_one("SELECT COUNT(*) AS c FROM security_events WHERE reviewed = 0")['c'] ?? 0);
+    ok(['events' => $rows, 'unreviewed_count' => $unreviewed]);
+}
+
+/**
+ * POST admin/security-events/{id}/review — marca un evento como revisado.
+ */
+function admin_security_events_review(int $id): never {
+    require_csrf();
+    $u = require_login();
+    if (!in_array($u['role'], ['admin', 'super_admin'], true)) {
+        err('FORBIDDEN', 'Solo admins.', 403);
+    }
+    db_exec("UPDATE security_events SET reviewed = 1 WHERE id = ?", [$id]);
+    ok(['id' => $id, 'reviewed' => true]);
+}

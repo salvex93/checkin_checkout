@@ -674,14 +674,15 @@ const TourTooltip = ({
     onClick: onClose
   }), highlightBox && React.createElement("div", {
     style: {
-      position: 'absolute',
+      position: 'fixed',
       pointerEvents: 'none',
       top: highlightBox.top - 6,
       left: highlightBox.left - 6,
       width: highlightBox.width + 12,
       height: highlightBox.height + 12,
       borderRadius: '14px',
-      boxShadow: '0 0 0 4px #07d6da, 0 0 0 8px rgba(7,214,218,0.25)'
+      boxShadow: '0 0 0 4px #07d6da, 0 0 0 8px rgba(7,214,218,0.25)',
+      zIndex: 61
     }
   }), React.createElement("div", {
     style: {
@@ -1299,67 +1300,125 @@ const LoginCard = ({
   onGoForgot,
   theme,
   onToggleTheme
-}) => React.createElement("div", {
-  className: "max-w-md w-full bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-12 rounded-[2rem] sm:rounded-[3rem] md:rounded-[4rem] shadow-2xl dark:shadow-black/50 border border-slate-100 dark:border-slate-800 flex flex-col items-center anim-zoom-in relative"
-}, React.createElement("div", {
-  className: "absolute top-4 right-4 sm:top-6 sm:right-6"
-}, React.createElement(ThemeToggle, {
-  theme: theme,
-  onToggle: onToggleTheme
-})), React.createElement("div", {
-  className: "w-20 h-20 sm:w-28 sm:h-28 rounded-2xl sm:rounded-[2rem] flex items-center justify-center mb-6 sm:mb-8 ring-melius bg-white dark:bg-slate-800 p-2"
-}, React.createElement("img", {
-  src: "/assets/brands/melius.webp",
-  alt: "Melius Services",
-  className: "w-full h-full object-contain"
-})), React.createElement("h1", {
-  className: "text-2xl sm:text-3xl md:text-4xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tighter text-center font-display"
-}, "Clock System"), React.createElement("p", {
-  className: "text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-[9px] sm:text-[10px] mb-8 sm:mb-12 text-center"
-}, "Melius Services Portal"), React.createElement("form", {
-  onSubmit: onSubmit,
-  className: "w-full space-y-4 sm:space-y-5"
-}, React.createElement("div", {
-  className: "space-y-1"
-}, React.createElement("label", {
-  htmlFor: "login-email",
-  className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block"
-}, "Email Corporativo"), React.createElement("input", {
-  id: "login-email",
-  name: "email",
-  type: "email",
-  placeholder: "usuario@melius.com",
-  required: true,
-  autoComplete: "email",
-  className: "w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium"
-})), React.createElement("div", {
-  className: "space-y-1"
-}, React.createElement("label", {
-  htmlFor: "login-password",
-  className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block"
-}, "Contrase\xF1a"), React.createElement("input", {
-  id: "login-password",
-  name: "password",
-  type: "password",
-  required: true,
-  autoComplete: "current-password",
-  minLength: "1",
-  className: "w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium"
-})), React.createElement("button", {
-  type: "submit",
-  disabled: submitting,
-  className: "w-full btn-melius py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black text-lg sm:text-xl ring-melius transition-all active:scale-95 no-select disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-3"
-}, submitting && React.createElement(Icon, {
-  name: "Spinner",
-  size: 20
-}), submitting ? 'Validando' : 'Entrar')), React.createElement("div", {
-  className: "mt-8 sm:mt-12 flex flex-col items-center gap-4 sm:gap-5"
-}, React.createElement("button", {
-  onClick: onGoForgot,
-  className: "text-blue-600 dark:text-blue-300 font-black text-xs uppercase tracking-widest hover:underline transition-all"
-}, "Olvid\xE9 mi contrase\xF1a"), React.createElement("p", {
-  className: "text-[10px] text-slate-400 dark:text-slate-500 font-bold text-center max-w-xs"
-}, "El alta de cuentas es exclusiva del administrador. Solicita una invitaci\xF3n para acceder.")));
+}) => {
+  const [captcha, setCaptcha] = useState(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [captchaError, setCaptchaError] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  useEffect(() => {
+    apiFetch('auth/captcha').then(d => setCaptcha(d)).catch(() => {});
+  }, []);
+  const handleVerifyCaptcha = async () => {
+    if (!captchaAnswer.trim()) return;
+    setVerifying(true);
+    setCaptchaError('');
+    try {
+      await apiPost('auth/captcha/verify', {
+        answer: parseInt(captchaAnswer, 10)
+      });
+      setCaptchaVerified(true);
+    } catch (e) {
+      setCaptchaError(e.message || 'Respuesta incorrecta.');
+      apiFetch('auth/captcha').then(d => {
+        setCaptcha(d);
+        setCaptchaAnswer('');
+      }).catch(() => {});
+    } finally {
+      setVerifying(false);
+    }
+  };
+  return React.createElement("div", {
+    className: "max-w-md w-full bg-white dark:bg-slate-900 p-6 sm:p-10 md:p-12 rounded-[2rem] sm:rounded-[3rem] md:rounded-[4rem] shadow-2xl dark:shadow-black/50 border border-slate-100 dark:border-slate-800 flex flex-col items-center anim-zoom-in relative"
+  }, React.createElement("div", {
+    className: "absolute top-4 right-4 sm:top-6 sm:right-6"
+  }, React.createElement(ThemeToggle, {
+    theme: theme,
+    onToggle: onToggleTheme
+  })), React.createElement("div", {
+    className: "w-20 h-20 sm:w-28 sm:h-28 rounded-2xl sm:rounded-[2rem] flex items-center justify-center mb-6 sm:mb-8 ring-melius bg-white dark:bg-slate-800 p-2"
+  }, React.createElement("img", {
+    src: "/assets/brands/melius.webp",
+    alt: "Melius Services",
+    className: "w-full h-full object-contain"
+  })), React.createElement("h1", {
+    className: "text-2xl sm:text-3xl md:text-4xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tighter text-center font-display"
+  }, "Clock System"), React.createElement("p", {
+    className: "text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-[9px] sm:text-[10px] mb-8 sm:mb-12 text-center"
+  }, "Melius Services Portal"), !captchaVerified ? React.createElement("div", {
+    className: "w-full space-y-4"
+  }, React.createElement("div", {
+    className: "bg-slate-50 dark:bg-slate-800 rounded-2xl p-5 text-center border border-slate-100 dark:border-slate-700"
+  }, React.createElement("p", {
+    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest mb-3"
+  }, "Verificaci\xF3n de seguridad"), captcha ? React.createElement("p", {
+    className: "text-2xl font-black text-slate-800 dark:text-slate-100 font-display mb-4"
+  }, captcha.question) : React.createElement("div", {
+    className: "h-8 flex items-center justify-center"
+  }, React.createElement(Icon, {
+    name: "Spinner",
+    size: 20
+  })), React.createElement("input", {
+    type: "number",
+    value: captchaAnswer,
+    onChange: e => setCaptchaAnswer(e.target.value),
+    onKeyDown: e => e.key === 'Enter' && handleVerifyCaptcha(),
+    placeholder: "Tu respuesta",
+    className: "w-full px-6 py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-bold text-center text-lg mb-3"
+  }), captchaError && React.createElement("p", {
+    className: "text-red-500 text-xs font-bold mb-3"
+  }, captchaError), React.createElement("button", {
+    onClick: handleVerifyCaptcha,
+    disabled: verifying || !captchaAnswer.trim(),
+    className: "w-full btn-melius py-4 rounded-2xl font-black text-base ring-melius disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-2"
+  }, verifying && React.createElement(Icon, {
+    name: "Spinner",
+    size: 18
+  }), verifying ? 'Verificando…' : 'Continuar'))) : React.createElement("form", {
+    onSubmit: onSubmit,
+    className: "w-full space-y-4 sm:space-y-5"
+  }, React.createElement("div", {
+    className: "space-y-1"
+  }, React.createElement("label", {
+    htmlFor: "login-email",
+    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block"
+  }, "Email Corporativo"), React.createElement("input", {
+    id: "login-email",
+    name: "email",
+    type: "email",
+    placeholder: "usuario@melius.com",
+    required: true,
+    autoComplete: "email",
+    className: "w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium"
+  })), React.createElement("div", {
+    className: "space-y-1"
+  }, React.createElement("label", {
+    htmlFor: "login-password",
+    className: "text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-4 sm:ml-5 tracking-widest block"
+  }, "Contrase\xF1a"), React.createElement("input", {
+    id: "login-password",
+    name: "password",
+    type: "password",
+    required: true,
+    autoComplete: "current-password",
+    minLength: "1",
+    className: "w-full px-6 sm:px-8 py-4 sm:py-5 rounded-2xl sm:rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium"
+  })), React.createElement("button", {
+    type: "submit",
+    disabled: submitting,
+    className: "w-full btn-melius py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-black text-lg sm:text-xl ring-melius transition-all active:scale-95 no-select disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-3"
+  }, submitting && React.createElement(Icon, {
+    name: "Spinner",
+    size: 20
+  }), submitting ? 'Validando…' : 'Entrar')), React.createElement("div", {
+    className: "mt-8 sm:mt-12 flex flex-col items-center gap-4 sm:gap-5"
+  }, React.createElement("button", {
+    onClick: onGoForgot,
+    className: "text-blue-600 dark:text-blue-300 font-black text-xs uppercase tracking-widest hover:underline transition-all"
+  }, "Olvid\xE9 mi contrase\xF1a"), React.createElement("p", {
+    className: "text-[10px] text-slate-400 dark:text-slate-500 font-bold text-center max-w-xs"
+  }, "El alta de cuentas es exclusiva del administrador. Solicita una invitaci\xF3n para acceder.")));
+};
 const PasswordCard = ({
   title,
   subtitle,
@@ -6359,5 +6418,59 @@ const AdminRecordCard = ({
 }, rec.exit_time_cdmx, " ", React.createElement("span", {
   className: "text-[8px] font-bold"
 }, "CDMX")))));
+(function domHardening() {
+  const rootEl = document.getElementById('root');
+  if (!rootEl || typeof MutationObserver === 'undefined') return;
+  let reportThrottle = null;
+  const report = detail => {
+    if (reportThrottle) return;
+    reportThrottle = setTimeout(() => {
+      reportThrottle = null;
+    }, 10000);
+    try {
+      fetch('/api/anti-bot/dom-report', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          detail: detail.slice(0, 500)
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  };
+  const observer = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType === 1 && node.tagName === 'SCRIPT') {
+          report('script_injection: ' + (node.src || node.textContent.slice(0, 100)));
+          node.remove();
+        }
+      }
+      if (m.type === 'attributes' && m.target === rootEl) {
+        report('root_attr_modified: ' + m.attributeName);
+      }
+    }
+  });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['data-reactroot', 'id', 'class']
+  });
+  let devtoolsOpen = false;
+  const devCheck = () => {
+    const t = performance.now();
+    debugger;
+    if (performance.now() - t > 80 && !devtoolsOpen) {
+      devtoolsOpen = true;
+      report('devtools_open_detected');
+    }
+  };
+  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    setInterval(devCheck, 30000);
+  }
+})();
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(ToastProvider, null, React.createElement(BrandingProvider, null, React.createElement(App, null))));
