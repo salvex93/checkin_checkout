@@ -4704,6 +4704,17 @@
 
             useEffect(() => { load(); }, [load]);
 
+            const [unblockBusyId, setUnblockBusyId] = useState(null);
+            const unblockUser = async (userId) => {
+                setUnblockBusyId(userId);
+                try {
+                    await apiFetch('admin/users/' + userId + '/unblock', { method: 'POST', body: {} });
+                    toast('success', 'Cuenta desbloqueada.');
+                    load();
+                } catch (e) { toast('error', e.message); }
+                finally { setUnblockBusyId(null); }
+            };
+
             const markReviewed = async (id) => {
                 setBusyId(id);
                 try {
@@ -4841,6 +4852,13 @@
                                                 </div>
                                                 {/* Acciones */}
                                                 <div className="shrink-0 flex flex-col gap-1.5 items-end">
+                                                    {ev.user_id && !ev.reviewed && (
+                                                        <button onClick={() => unblockUser(ev.user_id)} disabled={unblockBusyId === ev.user_id}
+                                                            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-all disabled:opacity-50 inline-flex items-center gap-1.5">
+                                                            <Icon name="Unlock" size={12} />
+                                                            {unblockBusyId === ev.user_id ? '...' : 'Desbloquear'}
+                                                        </button>
+                                                    )}
                                                     {!ev.reviewed && (
                                                         <button onClick={() => markReviewed(ev.id)} disabled={busyId === ev.id}
                                                             className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 transition-all disabled:opacity-50">
@@ -5126,16 +5144,25 @@
                 for (const m of mutations) {
                     for (const node of m.addedNodes) {
                         if (node.nodeType !== 1) continue;
-                        // Inyeccion de script
                         if (node.tagName === 'SCRIPT') {
                             const src = node.src || node.textContent.slice(0, 120);
-                            node.remove();
-                            report('script_injection: ' + src, 'inyectar_script', false);
+                            // Extensiones de navegador — siempre falsos positivos, ignorar
+                            if (/^(chrome-extension|moz-extension|safari-extension|ms-browser-extension):\/\//i.test(src)) {
+                                continue;
+                            }
+                            // Script con src externo real (no del mismo origen)
+                            if (node.src && !node.src.startsWith(window.location.origin) && !/^chrome-extension/i.test(node.src)) {
+                                node.remove();
+                                report('script_injection: ' + src, 'inyectar_script', false);
+                            }
                         }
-                        // Iframe oculto (posible clickjacking o exfiltración)
+                        // Iframe oculto con src externo (no extensiones)
                         if (node.tagName === 'IFRAME' && (node.style.display === 'none' || node.style.visibility === 'hidden' || node.width === '0')) {
-                            node.remove();
-                            report('hidden_iframe: ' + (node.src || '').slice(0, 120), 'inyectar_iframe_oculto', false);
+                            const iSrc = node.src || '';
+                            if (!/^(chrome-extension|moz-extension):\/\//i.test(iSrc)) {
+                                node.remove();
+                                report('hidden_iframe: ' + iSrc.slice(0, 120), 'inyectar_iframe_oculto', false);
+                            }
                         }
                     }
                     // Eliminacion del contenedor raiz
