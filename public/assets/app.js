@@ -6521,15 +6521,9 @@ const SecurityEventsTab = () => {
     className: "text-center py-10 text-slate-400 text-sm"
   }, "Cargando..."), error && React.createElement("div", {
     className: "text-center py-10 text-red-500 text-sm"
-  }, error), !loading && !error && events.length === 0 && React.createElement("div", {
-    className: "text-center py-12"
-  }, React.createElement("div", {
-    className: "text-4xl mb-3"
-  }, "\uD83D\uDD12"), React.createElement("p", {
-    className: "font-black text-slate-600 dark:text-slate-300"
-  }, "Sin eventos de seguridad"), React.createElement("p", {
-    className: "text-xs text-slate-400 mt-1"
-  }, "No se han detectado actividades sospechosas con los filtros actuales.")), !loading && !error && events.length > 0 && React.createElement("div", {
+  }, error), !loading && !error && events.length === 0 && React.createElement(EmptyState, {
+    message: "Sin eventos de seguridad con los filtros actuales."
+  }), !loading && !error && events.length > 0 && React.createElement("div", {
     className: "flex flex-col gap-3"
   }, events.map(ev => {
     const meta = typeLabels[ev.event_type] || {
@@ -6539,53 +6533,72 @@ const SecurityEventsTab = () => {
     const evidence = parseEvidence(ev.detail || '');
     const detail = cleanDetail(ev.detail || '');
     const isExpanded = expandedId === ev.id;
+    const geoStr = [ev.geo_city, ev.geo_country_name].filter(Boolean).join(', ');
     return React.createElement("div", {
       key: ev.id,
-      className: `rounded-2xl border transition-all ${ev.reviewed ? 'border-slate-100 dark:border-slate-800 opacity-60' : 'border-red-100 dark:border-red-900/40 bg-red-50/30 dark:bg-red-950/10'}`
+      className: `rounded-2xl border transition-all ${ev.reviewed ? 'border-slate-100 dark:border-slate-800 opacity-50' : 'border-red-100 dark:border-red-900/40 bg-red-50/30 dark:bg-red-950/10'}`
     }, React.createElement("div", {
       className: "p-4 flex flex-col sm:flex-row sm:items-start gap-3"
     }, React.createElement("div", {
-      className: "shrink-0"
+      className: "shrink-0 pt-0.5"
     }, React.createElement("span", {
       className: `text-[10px] font-black uppercase px-2 py-1 rounded-lg ${meta.color}`
     }, meta.label)), React.createElement("div", {
       className: "flex-1 min-w-0"
     }, React.createElement("div", {
-      className: "flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mb-1"
+      className: "flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5"
     }, React.createElement("span", {
-      className: "font-mono font-bold text-slate-700 dark:text-slate-200"
-    }, ev.ip), ev.user_name && React.createElement("span", {
-      className: "font-bold text-slate-600 dark:text-slate-300"
-    }, ev.user_name), ev.user_email && React.createElement("span", {
-      className: "text-slate-400"
-    }, ev.user_email), React.createElement("span", null, new Date(ev.created_at).toLocaleString('es-MX'))), React.createElement("p", {
-      className: "text-xs text-slate-600 dark:text-slate-300 break-all"
+      className: "font-mono font-bold text-sm text-slate-800 dark:text-slate-100"
+    }, ev.ip), geoStr && React.createElement("span", {
+      className: "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+    }, React.createElement(Icon, {
+      name: "MapPin",
+      size: 10
+    }), geoStr), ev.user_name ? React.createElement("span", {
+      className: "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+    }, React.createElement(Icon, {
+      name: "User",
+      size: 10
+    }), ev.user_name, ev.company_name && React.createElement("span", {
+      className: "text-blue-400 dark:text-blue-500"
+    }, " \xB7 ", ev.company_name)) : React.createElement("span", {
+      className: "text-[10px] text-slate-400 font-medium"
+    }, "Sin sesi\xF3n activa"), React.createElement("span", {
+      className: "text-[10px] text-slate-400 ml-auto"
+    }, new Date(ev.created_at).toLocaleString('es-MX'))), React.createElement("p", {
+      className: "text-xs text-slate-600 dark:text-slate-300 break-all leading-relaxed"
     }, detail), evidence && React.createElement("div", {
-      className: "mt-2 flex flex-wrap gap-2"
+      className: "mt-2 flex flex-wrap gap-1.5"
     }, evidence.action_attempted && React.createElement("span", {
       className: "text-[10px] font-bold bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 px-2 py-0.5 rounded-lg"
     }, "Intento: ", evidence.action_attempted), React.createElement("span", {
       className: `text-[10px] font-bold px-2 py-0.5 rounded-lg ${evidence.succeeded ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'}`
-    }, evidence.succeeded ? 'Logrado' : 'Bloqueado'), ev.user_agent && React.createElement("button", {
+    }, evidence.succeeded ? 'Logrado' : 'Bloqueado'), (ev.user_agent || evidence.fingerprint) && React.createElement("button", {
       onClick: () => setExpandedId(isExpanded ? null : ev.id),
-      className: "text-[10px] font-bold text-melius-cyan underline"
-    }, isExpanded ? 'Ocultar detalle' : 'Ver evidencia completa')), isExpanded && React.createElement("div", {
+      className: "text-[10px] font-bold text-melius-cyan hover:underline"
+    }, isExpanded ? 'Ocultar detalle' : 'Ver evidencia')), isExpanded && React.createElement("div", {
       className: "mt-3 p-3 bg-slate-900 dark:bg-black rounded-xl text-[10px] font-mono text-green-400 break-all space-y-1"
     }, ev.user_agent && React.createElement("p", null, React.createElement("span", {
       className: "text-slate-400"
-    }, "UA:"), " ", ev.user_agent), ev.uri && React.createElement("p", null, React.createElement("span", {
+    }, "UA: "), ev.user_agent), ev.uri && React.createElement("p", null, React.createElement("span", {
       className: "text-slate-400"
-    }, "URI:"), " ", ev.uri), evidence?.fingerprint && React.createElement("p", null, React.createElement("span", {
+    }, "URI: "), ev.uri), ev.user_email && React.createElement("p", null, React.createElement("span", {
       className: "text-slate-400"
-    }, "Fingerprint:"), " ", evidence.fingerprint), evidence?.timestamp_ms && React.createElement("p", null, React.createElement("span", {
+    }, "Email: "), ev.user_email), geoStr && React.createElement("p", null, React.createElement("span", {
       className: "text-slate-400"
-    }, "Timestamp:"), " ", new Date(evidence.timestamp_ms).toISOString()))), !ev.reviewed && React.createElement("button", {
+    }, "Ubicaci\xF3n: "), geoStr, ev.geo_country_code ? ` (${ev.geo_country_code})` : ''), evidence?.fingerprint && React.createElement("p", null, React.createElement("span", {
+      className: "text-slate-400"
+    }, "Fingerprint: "), evidence.fingerprint), evidence?.timestamp_ms && React.createElement("p", null, React.createElement("span", {
+      className: "text-slate-400"
+    }, "Timestamp: "), new Date(evidence.timestamp_ms).toISOString()))), React.createElement("div", {
+      className: "shrink-0 flex flex-col gap-1.5 items-end"
+    }, !ev.reviewed && React.createElement("button", {
       onClick: () => markReviewed(ev.id),
       disabled: busyId === ev.id,
-      className: "shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 transition-all disabled:opacity-50"
+      className: "text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 transition-all disabled:opacity-50"
     }, busyId === ev.id ? '...' : 'Revisado'), ev.reviewed && React.createElement("span", {
-      className: "shrink-0 text-[10px] text-emerald-500 font-black uppercase"
-    }, "Revisado")));
+      className: "text-[10px] text-emerald-500 font-black uppercase tracking-wide"
+    }, "Revisado"))));
   }))));
 };
 const TzMismatchBadge = ({
@@ -6770,7 +6783,7 @@ const AdminRecordCard = ({
         const inner = overlay.querySelector('div');
         if (!inner) return;
         const actionArea = state === 'idle' ? '<button id="' + bypassBtn + '" style="margin-top:20px;padding:12px 28px;background:linear-gradient(135deg,#07d6da,#9909fe);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;">Enviar codigo a mi correo</button>' : '<div style="display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:16px;">' + '<input id="' + bypassId + '" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="_ _ _ _ _ _" autocomplete="one-time-code" style="padding:12px 16px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;font-size:22px;font-family:monospace;letter-spacing:0.25em;text-align:center;width:160px;" />' + '<button id="' + bypassBtn + '" style="padding:12px 20px;background:#0f172a;color:#94a3b8;border:1px solid #334155;border-radius:8px;cursor:pointer;font-size:13px;font-family:monospace;">Verificar</button>' + '</div>' + '<p style="color:#64748b;font-size:11px;margin-top:8px;">Codigo enviado a <strong style="color:#94a3b8;">' + (hint || 'tu correo') + '</strong> &mdash; caduca en 5 min</p>' + '<button id="' + bypassId + '_resend" style="background:none;border:none;color:#64748b;font-size:11px;cursor:pointer;margin-top:4px;text-decoration:underline;">Reenviar codigo</button>';
-        inner.innerHTML = '<div style="font-size:48px;margin-bottom:24px;">&#9888;</div>' + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>' + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g, '&lt;') + '</span></p>' + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:16px;">Tu IP, huella digital del navegador y la accion realizada<br>han sido registrados y enviados al equipo de seguridad.</p>' + '<p style="color:#64748b;font-size:12px;margin-bottom:4px;">Si eres super administrador, verifica tu identidad para continuar.</p>' + actionArea + '<p id="' + bypassMsg + '" style="color:#ef4444;font-size:12px;margin-top:10px;min-height:16px;">' + (errMsg || '') + '</p>';
+        inner.innerHTML = '<div style="margin-bottom:20px;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto;display:block;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>' + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>' + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g, '&lt;') + '</span></p>' + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:16px;">Tu IP, huella digital del navegador y la accion realizada<br>han sido registrados y enviados al equipo de seguridad.</p>' + '<p style="color:#64748b;font-size:12px;margin-bottom:4px;">Si eres super administrador, verifica tu identidad para continuar.</p>' + actionArea + '<p id="' + bypassMsg + '" style="color:#ef4444;font-size:12px;margin-top:10px;min-height:16px;">' + (errMsg || '') + '</p>';
         const btn = document.getElementById(bypassBtn);
         const inp = document.getElementById(bypassId);
         const msg = document.getElementById(bypassMsg);

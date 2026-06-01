@@ -185,10 +185,31 @@ function anti_bot_record_event(string $eventType, string $detail, ?int $userId =
         $ip  = substr((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'), 0, 45);
         $ua  = substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
         $uri = substr((string)($_SERVER['REQUEST_URI'] ?? ''), 0, 255);
+
+        // Resolver usuario desde sesion si no viene explicitamente
+        if ($userId === null && isset($_SESSION['user_id'])) {
+            $userId = (int)$_SESSION['user_id'];
+        }
+
+        // Geolocalizar la IP (fire-and-forget; fallo no bloquea el evento)
+        $geoCountryCode = null;
+        $geoCountryName = null;
+        $geoCity        = null;
+        if (function_exists('geo_resolve') && $ip !== 'unknown') {
+            try {
+                $geo = geo_resolve($ip);
+                $geoCountryCode = $geo['country_code'] ?? null;
+                $geoCountryName = $geo['country_name']  ?? null;
+                $geoCity        = $geo['city']           ?? null;
+            } catch (Throwable $_) {}
+        }
+
         db_exec(
-            "INSERT INTO security_events (event_type, ip, user_agent, uri, user_id, detail)
-             VALUES (?, ?, ?, ?, ?, ?)",
-            [$eventType, $ip, $ua ?: null, $uri ?: null, $userId, $detail]
+            "INSERT INTO security_events
+                (event_type, ip, user_agent, uri, user_id, detail, geo_country_code, geo_country_name, geo_city)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [$eventType, $ip, $ua ?: null, $uri ?: null, $userId, $detail,
+             $geoCountryCode, $geoCountryName, $geoCity]
         );
         if (in_array($eventType, ['scraping', 'dom_manipulation', 'ip_blocked'], true)) {
             anti_bot_notify_admins($eventType, $ip, $detail, $userId);
@@ -367,9 +388,12 @@ function admin_security_events_list(): never {
     $rows = db_all(
         "SELECT s.id, s.event_type, s.ip, s.user_agent, s.uri, s.detail,
                 s.reviewed, s.created_at,
-                u.name AS user_name, u.email AS user_email
+                s.geo_country_code, s.geo_country_name, s.geo_city,
+                u.name AS user_name, u.email AS user_email, u.company_id,
+                c.name AS company_name
            FROM security_events s
            LEFT JOIN users u ON u.id = s.user_id
+           LEFT JOIN companies c ON c.id = u.company_id
            {$whereSql}
           ORDER BY s.created_at DESC
           LIMIT 200",

@@ -4760,13 +4760,7 @@
 
                         {loading && <div className="text-center py-10 text-slate-400 text-sm">Cargando...</div>}
                         {error && <div className="text-center py-10 text-red-500 text-sm">{error}</div>}
-                        {!loading && !error && events.length === 0 && (
-                            <div className="text-center py-12">
-                                <div className="text-4xl mb-3">&#128274;</div>
-                                <p className="font-black text-slate-600 dark:text-slate-300">Sin eventos de seguridad</p>
-                                <p className="text-xs text-slate-400 mt-1">No se han detectado actividades sospechosas con los filtros actuales.</p>
-                            </div>
-                        )}
+                        {!loading && !error && events.length === 0 && <EmptyState message="Sin eventos de seguridad con los filtros actuales." />}
                         {!loading && !error && events.length > 0 && (
                             <div className="flex flex-col gap-3">
                                 {events.map(ev => {
@@ -4774,25 +4768,41 @@
                                     const evidence = parseEvidence(ev.detail || '');
                                     const detail = cleanDetail(ev.detail || '');
                                     const isExpanded = expandedId === ev.id;
+                                    const geoStr = [ev.geo_city, ev.geo_country_name].filter(Boolean).join(', ');
                                     return (
-                                        <div key={ev.id} className={`rounded-2xl border transition-all ${ev.reviewed ? 'border-slate-100 dark:border-slate-800 opacity-60' : 'border-red-100 dark:border-red-900/40 bg-red-50/30 dark:bg-red-950/10'}`}>
+                                        <div key={ev.id} className={`rounded-2xl border transition-all ${ev.reviewed ? 'border-slate-100 dark:border-slate-800 opacity-50' : 'border-red-100 dark:border-red-900/40 bg-red-50/30 dark:bg-red-950/10'}`}>
                                             <div className="p-4 flex flex-col sm:flex-row sm:items-start gap-3">
-                                                {/* Tipo + badge */}
-                                                <div className="shrink-0">
+                                                {/* Tipo */}
+                                                <div className="shrink-0 pt-0.5">
                                                     <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg ${meta.color}`}>{meta.label}</span>
                                                 </div>
-                                                {/* Info principal */}
+                                                {/* Cuerpo */}
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mb-1">
-                                                        <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{ev.ip}</span>
-                                                        {ev.user_name && <span className="font-bold text-slate-600 dark:text-slate-300">{ev.user_name}</span>}
-                                                        {ev.user_email && <span className="text-slate-400">{ev.user_email}</span>}
-                                                        <span>{new Date(ev.created_at).toLocaleString('es-MX')}</span>
+                                                    {/* Fila 1: IP + geo + usuario + empresa + fecha */}
+                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5">
+                                                        <span className="font-mono font-bold text-sm text-slate-800 dark:text-slate-100">{ev.ip}</span>
+                                                        {geoStr && (
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                                                <Icon name="MapPin" size={10} />
+                                                                {geoStr}
+                                                            </span>
+                                                        )}
+                                                        {ev.user_name ? (
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
+                                                                <Icon name="User" size={10} />
+                                                                {ev.user_name}
+                                                                {ev.company_name && <span className="text-blue-400 dark:text-blue-500"> · {ev.company_name}</span>}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] text-slate-400 font-medium">Sin sesión activa</span>
+                                                        )}
+                                                        <span className="text-[10px] text-slate-400 ml-auto">{new Date(ev.created_at).toLocaleString('es-MX')}</span>
                                                     </div>
-                                                    <p className="text-xs text-slate-600 dark:text-slate-300 break-all">{detail}</p>
-                                                    {/* Evidencia forense si existe */}
+                                                    {/* Detalle */}
+                                                    <p className="text-xs text-slate-600 dark:text-slate-300 break-all leading-relaxed">{detail}</p>
+                                                    {/* Badges de evidencia */}
                                                     {evidence && (
-                                                        <div className="mt-2 flex flex-wrap gap-2">
+                                                        <div className="mt-2 flex flex-wrap gap-1.5">
                                                             {evidence.action_attempted && (
                                                                 <span className="text-[10px] font-bold bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 px-2 py-0.5 rounded-lg">
                                                                     Intento: {evidence.action_attempted}
@@ -4801,31 +4811,36 @@
                                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${evidence.succeeded ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'}`}>
                                                                 {evidence.succeeded ? 'Logrado' : 'Bloqueado'}
                                                             </span>
-                                                            {ev.user_agent && (
+                                                            {(ev.user_agent || evidence.fingerprint) && (
                                                                 <button onClick={() => setExpandedId(isExpanded ? null : ev.id)}
-                                                                    className="text-[10px] font-bold text-melius-cyan underline">
-                                                                    {isExpanded ? 'Ocultar detalle' : 'Ver evidencia completa'}
+                                                                    className="text-[10px] font-bold text-melius-cyan hover:underline">
+                                                                    {isExpanded ? 'Ocultar detalle' : 'Ver evidencia'}
                                                                 </button>
                                                             )}
                                                         </div>
                                                     )}
+                                                    {/* Bloque forense expandido */}
                                                     {isExpanded && (
                                                         <div className="mt-3 p-3 bg-slate-900 dark:bg-black rounded-xl text-[10px] font-mono text-green-400 break-all space-y-1">
-                                                            {ev.user_agent && <p><span className="text-slate-400">UA:</span> {ev.user_agent}</p>}
-                                                            {ev.uri && <p><span className="text-slate-400">URI:</span> {ev.uri}</p>}
-                                                            {evidence?.fingerprint && <p><span className="text-slate-400">Fingerprint:</span> {evidence.fingerprint}</p>}
-                                                            {evidence?.timestamp_ms && <p><span className="text-slate-400">Timestamp:</span> {new Date(evidence.timestamp_ms).toISOString()}</p>}
+                                                            {ev.user_agent && <p><span className="text-slate-400">UA: </span>{ev.user_agent}</p>}
+                                                            {ev.uri && <p><span className="text-slate-400">URI: </span>{ev.uri}</p>}
+                                                            {ev.user_email && <p><span className="text-slate-400">Email: </span>{ev.user_email}</p>}
+                                                            {geoStr && <p><span className="text-slate-400">Ubicación: </span>{geoStr}{ev.geo_country_code ? ` (${ev.geo_country_code})` : ''}</p>}
+                                                            {evidence?.fingerprint && <p><span className="text-slate-400">Fingerprint: </span>{evidence.fingerprint}</p>}
+                                                            {evidence?.timestamp_ms && <p><span className="text-slate-400">Timestamp: </span>{new Date(evidence.timestamp_ms).toISOString()}</p>}
                                                         </div>
                                                     )}
                                                 </div>
-                                                {/* Acción */}
-                                                {!ev.reviewed && (
-                                                    <button onClick={() => markReviewed(ev.id)} disabled={busyId === ev.id}
-                                                        className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 transition-all disabled:opacity-50">
-                                                        {busyId === ev.id ? '...' : 'Revisado'}
-                                                    </button>
-                                                )}
-                                                {ev.reviewed && <span className="shrink-0 text-[10px] text-emerald-500 font-black uppercase">Revisado</span>}
+                                                {/* Acciones */}
+                                                <div className="shrink-0 flex flex-col gap-1.5 items-end">
+                                                    {!ev.reviewed && (
+                                                        <button onClick={() => markReviewed(ev.id)} disabled={busyId === ev.id}
+                                                            className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 transition-all disabled:opacity-50">
+                                                            {busyId === ev.id ? '...' : 'Revisado'}
+                                                        </button>
+                                                    )}
+                                                    {ev.reviewed && <span className="text-[10px] text-emerald-500 font-black uppercase tracking-wide">Revisado</span>}
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -5023,7 +5038,7 @@
                           + '<p style="color:#64748b;font-size:11px;margin-top:8px;">Codigo enviado a <strong style="color:#94a3b8;">' + (hint || 'tu correo') + '</strong> &mdash; caduca en 5 min</p>'
                           + '<button id="' + bypassId + '_resend" style="background:none;border:none;color:#64748b;font-size:11px;cursor:pointer;margin-top:4px;text-decoration:underline;">Reenviar codigo</button>';
 
-                    inner.innerHTML = '<div style="font-size:48px;margin-bottom:24px;">&#9888;</div>'
+                    inner.innerHTML = '<div style="margin-bottom:20px;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto;display:block;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>'
                         + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>'
                         + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g,'&lt;') + '</span></p>'
                         + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:16px;">Tu IP, huella digital del navegador y la accion realizada<br>han sido registrados y enviados al equipo de seguridad.</p>'

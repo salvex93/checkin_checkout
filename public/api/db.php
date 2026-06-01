@@ -118,6 +118,10 @@ class Database {
         self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_secevt_type ON security_events(event_type, created_at)");
         self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_secevt_ip ON security_events(ip, created_at)");
         self::$pdo->exec("CREATE INDEX IF NOT EXISTS idx_secevt_reviewed ON security_events(reviewed, created_at)");
+        // Columnas geo (migration idempotente via try/catch)
+        foreach (['geo_country_code TEXT NULL', 'geo_country_name TEXT NULL', 'geo_city TEXT NULL'] as $col) {
+            try { self::$pdo->exec("ALTER TABLE security_events ADD COLUMN {$col}"); } catch (Throwable $e) {}
+        }
     }
 }
 
