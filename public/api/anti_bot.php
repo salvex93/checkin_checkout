@@ -172,8 +172,8 @@ function anti_bot_verify(int $userId, array $body): void {
 // Persistencia de eventos de seguridad en DB + bloqueo por IP
 // =====================================================================
 
-const ANTI_BOT_IP_BLOCK_THRESHOLD = 5;   // hits en ventana
-const ANTI_BOT_IP_BLOCK_WINDOW_S  = 600; // 10 minutos
+const ANTI_BOT_IP_BLOCK_THRESHOLD  = 20;   // hits antes de bloquear
+const ANTI_BOT_IP_BLOCK_WINDOW_S   = 300;  // ventana de 5 minutos
 const ANTI_BOT_IP_BLOCK_DURATION_S = 3600; // 1 hora bloqueada
 
 /**
