@@ -267,6 +267,10 @@ try {
             auth_reset_password($body);
         case 'POST auth/verify-password':
             auth_verify_password($body);
+        case 'POST auth/dom-bypass-request':
+            auth_dom_bypass_request();
+        case 'POST auth/dom-bypass-verify':
+            auth_dom_bypass_verify($body);
 
         // --- Companies ---
         case 'GET companies':

@@ -404,17 +404,62 @@ function auth_captcha_verify(array $body): never {
 }
 
 /**
- * POST auth/verify-password — verifica la contraseña del usuario en sesion activa.
- * Usado exclusivamente por el bypass de super_admin en la alerta DOM hardening.
- * Retorna { ok: true, is_super_admin: bool } si la contraseña es correcta.
- * No genera eventos de seguridad ni bloquea la cuenta (es validacion interna).
+ * POST auth/dom-bypass-request — genera y envia OTP de 6 digitos al correo
+ * del super_admin para cerrar la alerta de DOM hardening.
+ * Requiere sesion activa de super_admin.
+ * OTP expira en 5 minutos. Rate limit: 3 intentos / 10 min.
  */
-function auth_verify_password(array $body): never {
+function auth_dom_bypass_request(): never {
     $u = require_login();
-    $password = validate_string($body, 'password', 1, 200);
-    $hash = (string)(db_one('SELECT password_hash FROM users WHERE id = ?', [(int)$u['id']])['password_hash'] ?? '');
-    if ($hash === '' || !password_verify($password, $hash)) {
-        ok(['ok' => false, 'is_super_admin' => false]);
+    if ($u['role'] !== 'super_admin') {
+        err('FORBIDDEN', 'Solo super administradores pueden usar este endpoint.', 403);
     }
-    ok(['ok' => true, 'is_super_admin' => ($u['role'] === 'super_admin')]);
+    rate_limit_or_block('dom_bypass_request', (string)$u['id'], 3, 600);
+
+    $otp = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    $hash = password_hash($otp, PASSWORD_BCRYPT, ['cost' => 10]);
+    $_SESSION['_dom_bypass_otp_hash'] = $hash;
+    $_SESSION['_dom_bypass_otp_ts']   = time();
+
+    $email = (string)($u['email'] ?? '');
+    $name  = (string)($u['name']  ?? 'Admin');
+
+    $subject = 'Codigo de verificacion — Melius Clockin';
+    $body = "<p>Hola <strong>" . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . "</strong>,</p>"
+          . "<p>Tu codigo de verificacion para continuar en el panel es:</p>"
+          . "<p style='font-size:36px;font-weight:900;letter-spacing:0.15em;font-family:monospace;color:#0f172a;background:#f1f5f9;padding:16px 32px;border-radius:12px;display:inline-block;margin:16px 0;'>{$otp}</p>"
+          . "<p style='color:#64748b;font-size:13px;'>Este codigo caduca en <strong>5 minutos</strong> y solo puede usarse una vez.<br>Si no solicitaste este codigo, ignora este correo.</p>";
+    $text = "Hola {$name},\n\nTu codigo de verificacion es: {$otp}\n\nCaduca en 5 minutos.\n";
+
+    $sent = mail_send($email, $subject, tpl_layout($subject, $body, null), $text);
+    if (!$sent) {
+        unset($_SESSION['_dom_bypass_otp_hash'], $_SESSION['_dom_bypass_otp_ts']);
+        err('MAIL_FAIL', 'No se pudo enviar el codigo. Revisa la configuracion SMTP.', 500);
+    }
+    ok(['sent' => true, 'email_hint' => substr($email, 0, 3) . '***@' . explode('@', $email)[1]]);
+}
+
+/**
+ * POST auth/dom-bypass-verify — verifica el OTP enviado al correo.
+ * Un intento consume el OTP (single-use). Expira en 5 minutos.
+ */
+function auth_dom_bypass_verify(array $body): never {
+    $u = require_login();
+    if ($u['role'] !== 'super_admin') {
+        err('FORBIDDEN', 'Solo super administradores.', 403);
+    }
+    $otp  = trim((string)($body['otp'] ?? ''));
+    $hash = $_SESSION['_dom_bypass_otp_hash'] ?? null;
+    $ts   = (int)($_SESSION['_dom_bypass_otp_ts'] ?? 0);
+
+    // Consumir siempre (single-use)
+    unset($_SESSION['_dom_bypass_otp_hash'], $_SESSION['_dom_bypass_otp_ts']);
+
+    if ($hash === null || (time() - $ts) > 300) {
+        ok(['ok' => false, 'reason' => 'expired']);
+    }
+    if (!password_verify($otp, $hash)) {
+        ok(['ok' => false, 'reason' => 'invalid']);
+    }
+    ok(['ok' => true]);
 }

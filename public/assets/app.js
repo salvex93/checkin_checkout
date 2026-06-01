@@ -6742,134 +6742,175 @@ const AdminRecordCard = ({
 (function domHardening() {
   const rootEl = document.getElementById('root');
   if (!rootEl || typeof MutationObserver === 'undefined') return;
-  const buildFingerprint = () => {
-    try {
-      const nav = window.navigator;
-      return [nav.userAgent.slice(0, 120), nav.language, String(screen.width) + 'x' + String(screen.height), String(nav.hardwareConcurrency || ''), Intl.DateTimeFormat().resolvedOptions().timeZone, String(nav.platform || '')].join('|');
-    } catch (_) {
-      return 'unknown';
-    }
-  };
-  const showWarning = action => {
-    if (document.getElementById('_sec_warn')) return;
-    const overlay = document.createElement('div');
-    overlay.id = '_sec_warn';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;padding:32px;text-align:center;';
-    const bypassId = '_sec_bypass_pw';
-    const bypassBtn = '_sec_bypass_btn';
-    const bypassMsg = '_sec_bypass_msg';
-    overlay.innerHTML = '<div style="max-width:560px;">' + '<div style="font-size:48px;margin-bottom:24px;">&#9888;</div>' + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>' + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g, '&lt;') + '</span></p>' + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:24px;">Este sistema monitorea y registra manipulaciones del DOM en tiempo real.<br>Tu IP, huella digital del navegador y la accion realizada han sido enviados<br>al equipo de seguridad para su revision.</p>' + '<p style="color:#64748b;font-size:11px;margin-bottom:20px;">Si eres super administrador, confirma tu contrasena para continuar.</p>' + '<div style="display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;">' + '<input id="' + bypassId + '" type="password" placeholder="Contrasena de super admin" autocomplete="current-password" style="padding:10px 14px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;font-size:13px;font-family:monospace;min-width:220px;" />' + '<button id="' + bypassBtn + '" style="padding:10px 20px;background:#0f172a;color:#94a3b8;border:1px solid #334155;border-radius:8px;cursor:pointer;font-size:12px;font-family:monospace;">Verificar</button>' + '</div>' + '<p id="' + bypassMsg + '" style="color:#ef4444;font-size:11px;margin-top:8px;min-height:16px;"></p>' + '</div>';
-    document.body.appendChild(overlay);
-    const btn = document.getElementById(bypassBtn);
-    const inp = document.getElementById(bypassId);
-    const msg = document.getElementById(bypassMsg);
-    if (btn && inp) {
-      btn.addEventListener('click', () => {
-        const pw = inp.value;
-        if (!pw) {
-          msg.textContent = 'Ingresa tu contrasena.';
-          return;
+  fetch('/api/auth/me', {
+    credentials: 'same-origin'
+  }).then(r => r.ok ? r.json() : null).then(d => {
+    if (d && d.user && d.user.role === 'super_admin') return;
+    startObserver();
+  }).catch(() => startObserver());
+  function startObserver() {
+    const buildFingerprint = () => {
+      try {
+        const nav = window.navigator;
+        return [nav.userAgent.slice(0, 120), nav.language, String(screen.width) + 'x' + String(screen.height), String(nav.hardwareConcurrency || ''), Intl.DateTimeFormat().resolvedOptions().timeZone, String(nav.platform || '')].join('|');
+      } catch (_) {
+        return 'unknown';
+      }
+    };
+    const showWarning = action => {
+      if (document.getElementById('_sec_warn')) return;
+      const overlay = document.createElement('div');
+      overlay.id = '_sec_warn';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;padding:32px;text-align:center;';
+      const bypassId = '_sec_bypass_pw';
+      const bypassBtn = '_sec_bypass_btn';
+      const bypassMsg = '_sec_bypass_msg';
+      let otpState = 'idle';
+      const renderOverlay = (state, hint, errMsg) => {
+        const inner = overlay.querySelector('div');
+        if (!inner) return;
+        const actionArea = state === 'idle' ? '<button id="' + bypassBtn + '" style="margin-top:20px;padding:12px 28px;background:linear-gradient(135deg,#07d6da,#9909fe);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;">Enviar codigo a mi correo</button>' : '<div style="display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:16px;">' + '<input id="' + bypassId + '" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="_ _ _ _ _ _" autocomplete="one-time-code" style="padding:12px 16px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;font-size:22px;font-family:monospace;letter-spacing:0.25em;text-align:center;width:160px;" />' + '<button id="' + bypassBtn + '" style="padding:12px 20px;background:#0f172a;color:#94a3b8;border:1px solid #334155;border-radius:8px;cursor:pointer;font-size:13px;font-family:monospace;">Verificar</button>' + '</div>' + '<p style="color:#64748b;font-size:11px;margin-top:8px;">Codigo enviado a <strong style="color:#94a3b8;">' + (hint || 'tu correo') + '</strong> &mdash; caduca en 5 min</p>' + '<button id="' + bypassId + '_resend" style="background:none;border:none;color:#64748b;font-size:11px;cursor:pointer;margin-top:4px;text-decoration:underline;">Reenviar codigo</button>';
+        inner.innerHTML = '<div style="font-size:48px;margin-bottom:24px;">&#9888;</div>' + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>' + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g, '&lt;') + '</span></p>' + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:16px;">Tu IP, huella digital del navegador y la accion realizada<br>han sido registrados y enviados al equipo de seguridad.</p>' + '<p style="color:#64748b;font-size:12px;margin-bottom:4px;">Si eres super administrador, verifica tu identidad para continuar.</p>' + actionArea + '<p id="' + bypassMsg + '" style="color:#ef4444;font-size:12px;margin-top:10px;min-height:16px;">' + (errMsg || '') + '</p>';
+        const btn = document.getElementById(bypassBtn);
+        const inp = document.getElementById(bypassId);
+        const msg = document.getElementById(bypassMsg);
+        const resend = document.getElementById(bypassId + '_resend');
+        const requestOtp = () => {
+          if (btn) {
+            btn.textContent = 'Enviando...';
+            btn.disabled = true;
+          }
+          fetch('/api/auth/dom-bypass-request', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: '{}'
+          }).then(r => r.json()).then(d => {
+            if (d.sent) {
+              otpState = 'sent';
+              renderOverlay('sent', d.email_hint, '');
+            } else {
+              renderOverlay('idle', '', d.error || 'No se pudo enviar. Intenta de nuevo.');
+            }
+          }).catch(() => renderOverlay('idle', '', 'Error de red.'));
+        };
+        if (btn && state === 'idle') btn.addEventListener('click', requestOtp);
+        if (resend) resend.addEventListener('click', requestOtp);
+        if (btn && inp && state === 'sent') {
+          const verify = () => {
+            const otp = inp.value.replace(/\D/g, '');
+            if (otp.length !== 6) {
+              if (msg) msg.textContent = 'Ingresa el codigo de 6 digitos.';
+              return;
+            }
+            btn.textContent = '...';
+            btn.disabled = true;
+            fetch('/api/auth/dom-bypass-verify', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                otp
+              })
+            }).then(r => r.json()).then(d => {
+              if (d.ok) {
+                overlay.remove();
+              } else if (d.reason === 'expired') {
+                renderOverlay('idle', '', 'El codigo expiro. Solicita uno nuevo.');
+              } else {
+                renderOverlay('sent', hint, 'Codigo incorrecto. Verifica e intenta de nuevo.');
+              }
+            }).catch(() => {
+              btn.textContent = 'Verificar';
+              btn.disabled = false;
+              if (msg) msg.textContent = 'Error de red.';
+            });
+          };
+          btn.addEventListener('click', verify);
+          inp.addEventListener('keydown', e => {
+            if (e.key === 'Enter') verify();
+          });
+          inp.addEventListener('input', () => {
+            inp.value = inp.value.replace(/\D/g, '').slice(0, 6);
+          });
+          inp.focus();
         }
-        btn.textContent = '...';
-        btn.disabled = true;
-        fetch('/api/auth/verify-password', {
+      };
+      overlay.innerHTML = '<div style="max-width:560px;"></div>';
+      document.body.appendChild(overlay);
+      renderOverlay('idle', '', '');
+    };
+    let reportThrottle = null;
+    const report = (detail, actionAttempted, succeeded) => {
+      showWarning(actionAttempted || detail);
+      if (reportThrottle) return;
+      reportThrottle = setTimeout(() => {
+        reportThrottle = null;
+      }, 8000);
+      try {
+        fetch('/api/anti-bot/dom-report', {
           method: 'POST',
           credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            password: pw
+            detail: detail.slice(0, 500),
+            action_attempted: (actionAttempted || '').slice(0, 100),
+            succeeded: !!succeeded,
+            fingerprint: buildFingerprint(),
+            timestamp_ms: Date.now()
           })
-        }).then(r => r.json()).then(d => {
-          if (d.ok && d.is_super_admin) {
-            overlay.remove();
-          } else if (d.ok) {
-            msg.textContent = 'Solo super administradores pueden cerrar esta alerta.';
-            btn.textContent = 'Verificar';
-            btn.disabled = false;
-          } else {
-            msg.textContent = 'Contrasena incorrecta.';
-            btn.textContent = 'Verificar';
-            btn.disabled = false;
+        }).catch(() => {});
+      } catch (_) {}
+    };
+    const observer = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.tagName === 'SCRIPT') {
+            const src = node.src || node.textContent.slice(0, 120);
+            node.remove();
+            report('script_injection: ' + src, 'inyectar_script', false);
           }
-        }).catch(() => {
-          msg.textContent = 'Error de red. Intenta de nuevo.';
-          btn.textContent = 'Verificar';
-          btn.disabled = false;
-        });
-      });
-      inp.addEventListener('keydown', e => {
-        if (e.key === 'Enter') btn.click();
-      });
-    }
-  };
-  let reportThrottle = null;
-  const report = (detail, actionAttempted, succeeded) => {
-    showWarning(actionAttempted || detail);
-    if (reportThrottle) return;
-    reportThrottle = setTimeout(() => {
-      reportThrottle = null;
-    }, 8000);
-    try {
-      fetch('/api/anti-bot/dom-report', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          detail: detail.slice(0, 500),
-          action_attempted: (actionAttempted || '').slice(0, 100),
-          succeeded: !!succeeded,
-          fingerprint: buildFingerprint(),
-          timestamp_ms: Date.now()
-        })
-      }).catch(() => {});
-    } catch (_) {}
-  };
-  const observer = new MutationObserver(mutations => {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        if (node.tagName === 'SCRIPT') {
-          const src = node.src || node.textContent.slice(0, 120);
-          node.remove();
-          report('script_injection: ' + src, 'inyectar_script', false);
-        }
-        if (node.tagName === 'IFRAME' && (node.style.display === 'none' || node.style.visibility === 'hidden' || node.width === '0')) {
-          node.remove();
-          report('hidden_iframe: ' + (node.src || '').slice(0, 120), 'inyectar_iframe_oculto', false);
-        }
-      }
-      if (m.type === 'childList') {
-        for (const node of m.removedNodes) {
-          if (node.id === 'root') {
-            report('root_removed', 'eliminar_contenedor_react', true);
+          if (node.tagName === 'IFRAME' && (node.style.display === 'none' || node.style.visibility === 'hidden' || node.width === '0')) {
+            node.remove();
+            report('hidden_iframe: ' + (node.src || '').slice(0, 120), 'inyectar_iframe_oculto', false);
           }
         }
+        if (m.type === 'childList') {
+          for (const node of m.removedNodes) {
+            if (node.id === 'root') {
+              report('root_removed', 'eliminar_contenedor_react', true);
+            }
+          }
+        }
+        if (m.type === 'attributes' && m.target === rootEl) {
+          report('root_attr_modified: ' + m.attributeName, 'modificar_atributo_root', true);
+        }
       }
-      if (m.type === 'attributes' && m.target === rootEl) {
-        report('root_attr_modified: ' + m.attributeName, 'modificar_atributo_root', true);
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-reactroot', 'id', 'class']
+    });
+    const _origFetch = window.fetch;
+    const _origXHR = window.XMLHttpRequest;
+    setTimeout(() => {
+      if (window.fetch !== _origFetch) {
+        report('fetch_override_detected', 'interceptar_fetch', true);
       }
-    }
-  });
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['data-reactroot', 'id', 'class']
-  });
-  const _origFetch = window.fetch;
-  const _origXHR = window.XMLHttpRequest;
-  setTimeout(() => {
-    if (window.fetch !== _origFetch) {
-      report('fetch_override_detected', 'interceptar_fetch', true);
-    }
-    if (window.XMLHttpRequest !== _origXHR) {
-      report('xhr_override_detected', 'interceptar_xhr', true);
-    }
-  }, 3000);
+      if (window.XMLHttpRequest !== _origXHR) {
+        report('xhr_override_detected', 'interceptar_xhr', true);
+      }
+    }, 3000);
+  }
 })();
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(ToastProvider, null, React.createElement(BrandingProvider, null, React.createElement(App, null))));
