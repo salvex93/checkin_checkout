@@ -261,13 +261,85 @@ function anti_bot_notify_admins(string $eventType, string $ip, string $detail, ?
 
 /**
  * Endpoint POST anti-bot/dom-report — el frontend reporta manipulacion del DOM.
+ * Captura evidencia forense: tipo de intento, fingerprint del navegador,
+ * accion intentada y si la tuvo exito o fue bloqueada.
  * No requiere sesion activa (el atacante puede no estar logueado).
  */
 function anti_bot_dom_report(array $body): never {
-    $detail  = substr((string)($body['detail'] ?? 'sin detalle'), 0, 500);
-    $userId  = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
-    anti_bot_record_event('dom_manipulation', $detail, $userId);
+    $detail          = substr((string)($body['detail']           ?? 'sin detalle'), 0, 500);
+    $actionAttempted = substr((string)($body['action_attempted'] ?? ''),            0, 100);
+    $succeeded       = !empty($body['succeeded']) ? 1 : 0;
+    $fingerprint     = substr((string)($body['fingerprint']      ?? ''),            0, 512);
+    $userId          = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+
+    // Enriquecer el detalle con evidencia forense estructurada
+    $evidence = json_encode([
+        'action_attempted' => $actionAttempted ?: null,
+        'succeeded'        => (bool)$succeeded,
+        'fingerprint'      => $fingerprint ?: null,
+        'session_user_id'  => $userId,
+        'timestamp_ms'     => $body['timestamp_ms'] ?? null,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    $fullDetail = $detail . ' | evidence=' . $evidence;
+
+    anti_bot_record_event('dom_manipulation', substr($fullDetail, 0, 1000), $userId);
     ok(['received' => true]);
+}
+
+// =====================================================================
+// Helpers testables — wrappers sin exit() para PHPUnit
+// =====================================================================
+
+/**
+ * Versión testable de anti_bot_dom_report: no hace ok() (que hace exit).
+ * Sólo persiste el evento. Úsala en tests unitarios.
+ */
+function anti_bot_dom_report_testable(array $body): void {
+    $detail          = substr((string)($body['detail']           ?? 'sin detalle'), 0, 500);
+    $actionAttempted = substr((string)($body['action_attempted'] ?? ''),            0, 100);
+    $succeeded       = !empty($body['succeeded']) ? 1 : 0;
+    $fingerprint     = substr((string)($body['fingerprint']      ?? ''),            0, 512);
+    $userId          = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+
+    $evidence = json_encode([
+        'action_attempted' => $actionAttempted ?: null,
+        'succeeded'        => (bool)$succeeded,
+        'fingerprint'      => $fingerprint ?: null,
+        'session_user_id'  => $userId,
+        'timestamp_ms'     => $body['timestamp_ms'] ?? null,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    $fullDetail = $detail . ' | evidence=' . $evidence;
+    anti_bot_record_event('dom_manipulation', substr($fullDetail, 0, 1000), $userId);
+}
+
+/**
+ * Versión testable de admin_security_events_list: retorna array en vez de ok().
+ */
+function security_events_for_admin(int $adminId, string $type = 'all', string $reviewed = 'false'): array {
+    $where  = [];
+    $params = [];
+    $allowed = ['scraping', 'dom_manipulation', 'brute_force', 'bot_blocked', 'ip_blocked', 'all'];
+    if (in_array($type, $allowed, true) && $type !== 'all') {
+        $where[]  = 'event_type = ?';
+        $params[] = $type;
+    }
+    if ($reviewed === 'false') {
+        $where[] = 'reviewed = 0';
+    }
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    return db_all(
+        "SELECT s.id, s.event_type, s.ip, s.user_agent, s.uri, s.detail,
+                s.reviewed, s.created_at,
+                u.name AS user_name, u.email AS user_email
+           FROM security_events s
+           LEFT JOIN users u ON u.id = s.user_id
+           {$whereSql}
+          ORDER BY s.created_at DESC
+          LIMIT 200",
+        $params
+    );
 }
 
 /**

@@ -1732,12 +1732,13 @@
                 { id: 'companies', label: 'Empresas', icon: 'Building' },
                 { id: 'admins', label: 'Admins', icon: 'ShieldCheck' },
                 { id: 'alerts', label: 'Alertas geo', icon: 'AlertTriangle' },
+                { id: 'security', label: 'Seguridad', icon: 'Shield' },
                 ...(isSuper ? [{ id: 'emails', label: 'Plantillas', icon: 'FileText' }] : []),
                 ...(isSuper ? [{ id: 'tenant', label: 'Configuración', icon: 'Lock' }] : []),
             ];
 
             const [activeTab, setActiveTab] = useState(() => {
-                const allowed = new Set(['dashboard','records','agents','requests', ...(isSuper ? ['brands','tenant','emails'] : []), 'companies','admins','alerts']);
+                const allowed = new Set(['dashboard','records','agents','requests', ...(isSuper ? ['brands','tenant','emails'] : []), 'companies','admins','alerts','security']);
                 const saved = readNavState().adminTab;
                 return saved && allowed.has(saved) ? saved : 'dashboard';
             });
@@ -1975,6 +1976,7 @@
                     {activeTab === 'companies' && <CompaniesTab isSuper={isSuper} />}
                     {activeTab === 'admins' && <AdminsTab currentUser={currentUser} isSuper={isSuper} />}
                     {activeTab === 'alerts' && <LocationAlertsTab onChange={refreshCounts} />}
+                    {activeTab === 'security' && <SecurityEventsTab />}
                     {activeTab === 'tenant' && isSuper && <ConfigurationTab />}
                     {activeTab === 'emails' && isSuper && <EmailTemplatesTab />}
 
@@ -4602,6 +4604,174 @@
             );
         };
 
+        // =====================================================================
+        // SecurityEventsTab — panel de eventos de seguridad con evidencia forense
+        // =====================================================================
+        const SecurityEventsTab = () => {
+            const { push: toast } = useToast();
+            const [events, setEvents] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [typeFilter, setTypeFilter] = useState('all');
+            const [showReviewed, setShowReviewed] = useState(false);
+            const [busyId, setBusyId] = useState(null);
+            const [expandedId, setExpandedId] = useState(null);
+            const [unreviewedCount, setUnreviewedCount] = useState(0);
+
+            const load = useCallback(async () => {
+                setLoading(true); setError(null);
+                try {
+                    const params = new URLSearchParams({ type: typeFilter, reviewed: showReviewed ? 'true' : 'false' });
+                    const d = await apiFetch('admin/security-events?' + params.toString());
+                    setEvents(d.events || []);
+                    setUnreviewedCount(d.unreviewed_count || 0);
+                } catch (e) { setError(e.message); }
+                finally { setLoading(false); }
+            }, [typeFilter, showReviewed]);
+
+            useEffect(() => { load(); }, [load]);
+
+            const markReviewed = async (id) => {
+                setBusyId(id);
+                try {
+                    await apiFetch('admin/security-events/' + id + '/review', { method: 'POST', body: {} });
+                    toast('success', 'Evento marcado como revisado.');
+                    load();
+                } catch (e) { toast('error', e.message); }
+                finally { setBusyId(null); }
+            };
+
+            const typeLabels = {
+                dom_manipulation: { label: 'Manipulación DOM', color: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
+                scraping:         { label: 'Scraping',         color: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300' },
+                brute_force:      { label: 'Fuerza bruta',     color: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300' },
+                bot_blocked:      { label: 'Bot bloqueado',    color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300' },
+                ip_blocked:       { label: 'IP bloqueada',     color: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300' },
+            };
+
+            const parseEvidence = (detail) => {
+                try {
+                    const idx = detail.indexOf('| evidence=');
+                    if (idx === -1) return null;
+                    return JSON.parse(detail.slice(idx + 11));
+                } catch (_) { return null; }
+            };
+
+            const cleanDetail = (detail) => {
+                const idx = detail.indexOf(' | evidence=');
+                return idx === -1 ? detail : detail.slice(0, idx);
+            };
+
+            return (
+                <div className="flex flex-col gap-4">
+                    {/* Header */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 p-5 sm:p-7">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-red-100 dark:bg-red-900/30 p-3 rounded-2xl text-red-600 dark:text-red-400 shrink-0"><Icon name="Shield" size={20} /></div>
+                                <div>
+                                    <h3 className="font-black text-lg text-slate-800 dark:text-slate-100">Eventos de seguridad</h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Manipulación DOM, scraping, fuerza bruta, IPs bloqueadas</p>
+                                </div>
+                                {unreviewedCount > 0 && <span className="ml-2 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-black">{unreviewedCount} sin revisar</span>}
+                            </div>
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+                                    className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+                                    <option value="all">Todos los tipos</option>
+                                    <option value="dom_manipulation">Manipulación DOM</option>
+                                    <option value="scraping">Scraping</option>
+                                    <option value="brute_force">Fuerza bruta</option>
+                                    <option value="bot_blocked">Bot bloqueado</option>
+                                    <option value="ip_blocked">IP bloqueada</option>
+                                </select>
+                                <button onClick={() => setShowReviewed(v => !v)}
+                                    className={`text-xs font-bold px-3 py-2 rounded-xl border transition-all ${showReviewed ? 'btn-melius' : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'}`}>
+                                    {showReviewed ? 'Mostrando todos' : 'Solo sin revisar'}
+                                </button>
+                                <button onClick={load} className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 bg-white dark:bg-slate-800 hover:bg-slate-50 transition-all"><Icon name="RefreshCw" size={13} /></button>
+                            </div>
+                        </div>
+
+                        {loading && <div className="text-center py-10 text-slate-400 text-sm">Cargando...</div>}
+                        {error && <div className="text-center py-10 text-red-500 text-sm">{error}</div>}
+                        {!loading && !error && events.length === 0 && (
+                            <div className="text-center py-12">
+                                <div className="text-4xl mb-3">&#128274;</div>
+                                <p className="font-black text-slate-600 dark:text-slate-300">Sin eventos de seguridad</p>
+                                <p className="text-xs text-slate-400 mt-1">No se han detectado actividades sospechosas con los filtros actuales.</p>
+                            </div>
+                        )}
+                        {!loading && !error && events.length > 0 && (
+                            <div className="flex flex-col gap-3">
+                                {events.map(ev => {
+                                    const meta = typeLabels[ev.event_type] || { label: ev.event_type, color: 'bg-slate-100 text-slate-600' };
+                                    const evidence = parseEvidence(ev.detail || '');
+                                    const detail = cleanDetail(ev.detail || '');
+                                    const isExpanded = expandedId === ev.id;
+                                    return (
+                                        <div key={ev.id} className={`rounded-2xl border transition-all ${ev.reviewed ? 'border-slate-100 dark:border-slate-800 opacity-60' : 'border-red-100 dark:border-red-900/40 bg-red-50/30 dark:bg-red-950/10'}`}>
+                                            <div className="p-4 flex flex-col sm:flex-row sm:items-start gap-3">
+                                                {/* Tipo + badge */}
+                                                <div className="shrink-0">
+                                                    <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg ${meta.color}`}>{meta.label}</span>
+                                                </div>
+                                                {/* Info principal */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mb-1">
+                                                        <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{ev.ip}</span>
+                                                        {ev.user_name && <span className="font-bold text-slate-600 dark:text-slate-300">{ev.user_name}</span>}
+                                                        {ev.user_email && <span className="text-slate-400">{ev.user_email}</span>}
+                                                        <span>{new Date(ev.created_at).toLocaleString('es-MX')}</span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-300 break-all">{detail}</p>
+                                                    {/* Evidencia forense si existe */}
+                                                    {evidence && (
+                                                        <div className="mt-2 flex flex-wrap gap-2">
+                                                            {evidence.action_attempted && (
+                                                                <span className="text-[10px] font-bold bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 px-2 py-0.5 rounded-lg">
+                                                                    Intento: {evidence.action_attempted}
+                                                                </span>
+                                                            )}
+                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${evidence.succeeded ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'}`}>
+                                                                {evidence.succeeded ? 'Logrado' : 'Bloqueado'}
+                                                            </span>
+                                                            {ev.user_agent && (
+                                                                <button onClick={() => setExpandedId(isExpanded ? null : ev.id)}
+                                                                    className="text-[10px] font-bold text-melius-cyan underline">
+                                                                    {isExpanded ? 'Ocultar detalle' : 'Ver evidencia completa'}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {isExpanded && (
+                                                        <div className="mt-3 p-3 bg-slate-900 dark:bg-black rounded-xl text-[10px] font-mono text-green-400 break-all space-y-1">
+                                                            {ev.user_agent && <p><span className="text-slate-400">UA:</span> {ev.user_agent}</p>}
+                                                            {ev.uri && <p><span className="text-slate-400">URI:</span> {ev.uri}</p>}
+                                                            {evidence?.fingerprint && <p><span className="text-slate-400">Fingerprint:</span> {evidence.fingerprint}</p>}
+                                                            {evidence?.timestamp_ms && <p><span className="text-slate-400">Timestamp:</span> {new Date(evidence.timestamp_ms).toISOString()}</p>}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {/* Acción */}
+                                                {!ev.reviewed && (
+                                                    <button onClick={() => markReviewed(ev.id)} disabled={busyId === ev.id}
+                                                        className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 transition-all disabled:opacity-50">
+                                                        {busyId === ev.id ? '...' : 'Revisado'}
+                                                    </button>
+                                                )}
+                                                {ev.reviewed && <span className="shrink-0 text-[10px] text-emerald-500 font-black uppercase">Revisado</span>}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
         const TzMismatchBadge = ({ rec }) => {
             if (!rec.tz_mismatch) return null;
             const profile = rec.timezone || '—';
@@ -4734,46 +4904,113 @@
         );
 
         // =====================================================================
-        // DOM Hardening — detecta manipulacion del arbol React y reporta al backend.
-        // MutationObserver vigila el nodo #root: si alguien inyecta nodos script,
-        // modifica data-attributes criticos o elimina el contenedor, reporta.
+        // DOM Hardening v2 — deteccion de manipulacion con evidencia forense.
+        // Captura: tipo de intento, fingerprint del navegador, si tuvo exito.
+        // Muestra alerta visible al atacante y reporta al backend.
         // =====================================================================
         (function domHardening() {
             const rootEl = document.getElementById('root');
             if (!rootEl || typeof MutationObserver === 'undefined') return;
 
+            // Fingerprint ligero del navegador para identificar al actor
+            const buildFingerprint = () => {
+                try {
+                    const nav = window.navigator;
+                    return [
+                        nav.userAgent.slice(0, 120),
+                        nav.language,
+                        String(screen.width) + 'x' + String(screen.height),
+                        String(nav.hardwareConcurrency || ''),
+                        Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        String(nav.platform || ''),
+                    ].join('|');
+                } catch (_) { return 'unknown'; }
+            };
+
+            // Alerta visual intimidante al atacante — se muestra en pantalla completa
+            const showWarning = (action) => {
+                if (document.getElementById('_sec_warn')) return;
+                const overlay = document.createElement('div');
+                overlay.id = '_sec_warn';
+                overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;padding:32px;text-align:center;';
+                overlay.innerHTML = '<div style="max-width:560px;">'
+                    + '<div style="font-size:48px;margin-bottom:24px;">&#9888;</div>'
+                    + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>'
+                    + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g,'&lt;') + '</span></p>'
+                    + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:24px;">Este sistema monitorea y registra manipulaciones del DOM en tiempo real.<br>Tu IP, huella digital del navegador y la accion realizada han sido enviados<br>al equipo de seguridad para su revision.</p>'
+                    + '<p style="color:#64748b;font-size:11px;">Si eres un administrador revisando la aplicacion, recarga la pagina normalmente.</p>'
+                    + '<button onclick="document.getElementById(\'_sec_warn\').remove()" style="margin-top:24px;padding:10px 28px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:8px;cursor:pointer;font-size:12px;font-family:monospace;">Cerrar</button>'
+                    + '</div>';
+                document.body.appendChild(overlay);
+            };
+
             let reportThrottle = null;
-            const report = (detail) => {
+            const report = (detail, actionAttempted, succeeded) => {
+                showWarning(actionAttempted || detail);
                 if (reportThrottle) return;
-                reportThrottle = setTimeout(() => { reportThrottle = null; }, 10000);
+                reportThrottle = setTimeout(() => { reportThrottle = null; }, 8000);
                 try {
                     fetch('/api/anti-bot/dom-report', {
                         method: 'POST', credentials: 'same-origin',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ detail: detail.slice(0, 500) }),
+                        body: JSON.stringify({
+                            detail: detail.slice(0, 500),
+                            action_attempted: (actionAttempted || '').slice(0, 100),
+                            succeeded: !!succeeded,
+                            fingerprint: buildFingerprint(),
+                            timestamp_ms: Date.now(),
+                        }),
                     }).catch(() => {});
                 } catch (_) {}
             };
 
             const observer = new MutationObserver((mutations) => {
                 for (const m of mutations) {
-                    // Inyeccion de nodo script externo
                     for (const node of m.addedNodes) {
-                        if (node.nodeType === 1 && node.tagName === 'SCRIPT') {
-                            report('script_injection: ' + (node.src || node.textContent.slice(0, 100)));
+                        if (node.nodeType !== 1) continue;
+                        // Inyeccion de script
+                        if (node.tagName === 'SCRIPT') {
+                            const src = node.src || node.textContent.slice(0, 120);
                             node.remove();
+                            report('script_injection: ' + src, 'inyectar_script', false);
+                        }
+                        // Iframe oculto (posible clickjacking o exfiltración)
+                        if (node.tagName === 'IFRAME' && (node.style.display === 'none' || node.style.visibility === 'hidden' || node.width === '0')) {
+                            node.remove();
+                            report('hidden_iframe: ' + (node.src || '').slice(0, 120), 'inyectar_iframe_oculto', false);
+                        }
+                    }
+                    // Eliminacion del contenedor raiz
+                    if (m.type === 'childList') {
+                        for (const node of m.removedNodes) {
+                            if (node.id === 'root') {
+                                report('root_removed', 'eliminar_contenedor_react', true);
+                            }
                         }
                     }
                     // Modificacion de atributos criticos del root
                     if (m.type === 'attributes' && m.target === rootEl) {
-                        report('root_attr_modified: ' + m.attributeName);
+                        report('root_attr_modified: ' + m.attributeName, 'modificar_atributo_root', true);
                     }
                 }
             });
-            observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-reactroot', 'id', 'class'] });
+            observer.observe(document.body, {
+                childList: true, subtree: true,
+                attributes: true,
+                attributeFilter: ['data-reactroot', 'id', 'class'],
+            });
 
-            // Nota: deteccion de DevTools removida — genera falsos positivos
-            // que bloquean clockin de usuarios legitimos (admins depurando).
+            // Detectar override de fetch/XMLHttpRequest (posible interceptor de credenciales)
+            const _origFetch = window.fetch;
+            const _origXHR   = window.XMLHttpRequest;
+            setTimeout(() => {
+                if (window.fetch !== _origFetch) {
+                    report('fetch_override_detected', 'interceptar_fetch', true);
+                }
+                if (window.XMLHttpRequest !== _origXHR) {
+                    report('xhr_override_detected', 'interceptar_xhr', true);
+                }
+            }, 3000);
         })();
 
         const root = ReactDOM.createRoot(document.getElementById('root'));

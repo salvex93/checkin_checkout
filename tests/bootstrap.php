@@ -29,6 +29,9 @@ register_shutdown_function(function () use ($testDbPath) {
 require_once $projectRoot . '/public/api/config.php';
 require_once $projectRoot . '/public/api/db.php';
 require_once $projectRoot . '/public/api/helpers.php';
+require_once $projectRoot . '/public/api/csrf.php';
+require_once $projectRoot . '/public/api/mailer.php';
+require_once $projectRoot . '/public/api/anti_bot.php';
 
 // Cargar schema canonico SQLite.
 $pdo = Database::pdo();

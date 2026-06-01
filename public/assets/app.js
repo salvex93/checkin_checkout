@@ -2327,6 +2327,10 @@ const AdminPanel = ({
     id: 'alerts',
     label: 'Alertas geo',
     icon: 'AlertTriangle'
+  }, {
+    id: 'security',
+    label: 'Seguridad',
+    icon: 'Shield'
   }, ...(isSuper ? [{
     id: 'emails',
     label: 'Plantillas',
@@ -2337,7 +2341,7 @@ const AdminPanel = ({
     icon: 'Lock'
   }] : [])];
   const [activeTab, setActiveTab] = useState(() => {
-    const allowed = new Set(['dashboard', 'records', 'agents', 'requests', ...(isSuper ? ['brands', 'tenant', 'emails'] : []), 'companies', 'admins', 'alerts']);
+    const allowed = new Set(['dashboard', 'records', 'agents', 'requests', ...(isSuper ? ['brands', 'tenant', 'emails'] : []), 'companies', 'admins', 'alerts', 'security']);
     const saved = readNavState().adminTab;
     return saved && allowed.has(saved) ? saved : 'dashboard';
   });
@@ -2619,7 +2623,7 @@ const AdminPanel = ({
     isSuper: isSuper
   }), activeTab === 'alerts' && React.createElement(LocationAlertsTab, {
     onChange: refreshCounts
-  }), activeTab === 'tenant' && isSuper && React.createElement(ConfigurationTab, null), activeTab === 'emails' && isSuper && React.createElement(EmailTemplatesTab, null), React.createElement("nav", {
+  }), activeTab === 'security' && React.createElement(SecurityEventsTab, null), activeTab === 'tenant' && isSuper && React.createElement(ConfigurationTab, null), activeTab === 'emails' && isSuper && React.createElement(EmailTemplatesTab, null), React.createElement("nav", {
     className: "md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-2 py-1 z-40 flex justify-around",
     style: {
       paddingBottom: 'max(4px, env(safe-area-inset-bottom))'
@@ -6278,6 +6282,205 @@ const LocationAlertsTab = ({
     }), " Descartar"))));
   })));
 };
+const SecurityEventsTab = () => {
+  const {
+    push: toast
+  } = useToast();
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [showReviewed, setShowReviewed] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [unreviewedCount, setUnreviewedCount] = useState(0);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        type: typeFilter,
+        reviewed: showReviewed ? 'true' : 'false'
+      });
+      const d = await apiFetch('admin/security-events?' + params.toString());
+      setEvents(d.events || []);
+      setUnreviewedCount(d.unreviewed_count || 0);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [typeFilter, showReviewed]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const markReviewed = async id => {
+    setBusyId(id);
+    try {
+      await apiFetch('admin/security-events/' + id + '/review', {
+        method: 'POST',
+        body: {}
+      });
+      toast('success', 'Evento marcado como revisado.');
+      load();
+    } catch (e) {
+      toast('error', e.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+  const typeLabels = {
+    dom_manipulation: {
+      label: 'Manipulación DOM',
+      color: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+    },
+    scraping: {
+      label: 'Scraping',
+      color: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300'
+    },
+    brute_force: {
+      label: 'Fuerza bruta',
+      color: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300'
+    },
+    bot_blocked: {
+      label: 'Bot bloqueado',
+      color: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+    },
+    ip_blocked: {
+      label: 'IP bloqueada',
+      color: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
+    }
+  };
+  const parseEvidence = detail => {
+    try {
+      const idx = detail.indexOf('| evidence=');
+      if (idx === -1) return null;
+      return JSON.parse(detail.slice(idx + 11));
+    } catch (_) {
+      return null;
+    }
+  };
+  const cleanDetail = detail => {
+    const idx = detail.indexOf(' | evidence=');
+    return idx === -1 ? detail : detail.slice(0, idx);
+  };
+  return React.createElement("div", {
+    className: "flex flex-col gap-4"
+  }, React.createElement("div", {
+    className: "bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-800 p-5 sm:p-7"
+  }, React.createElement("div", {
+    className: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5"
+  }, React.createElement("div", {
+    className: "flex items-center gap-3"
+  }, React.createElement("div", {
+    className: "bg-red-100 dark:bg-red-900/30 p-3 rounded-2xl text-red-600 dark:text-red-400 shrink-0"
+  }, React.createElement(Icon, {
+    name: "Shield",
+    size: 20
+  })), React.createElement("div", null, React.createElement("h3", {
+    className: "font-black text-lg text-slate-800 dark:text-slate-100"
+  }, "Eventos de seguridad"), React.createElement("p", {
+    className: "text-xs text-slate-500 dark:text-slate-400"
+  }, "Manipulaci\xF3n DOM, scraping, fuerza bruta, IPs bloqueadas")), unreviewedCount > 0 && React.createElement("span", {
+    className: "ml-2 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-black"
+  }, unreviewedCount, " sin revisar")), React.createElement("div", {
+    className: "flex flex-wrap gap-2 items-center"
+  }, React.createElement("select", {
+    value: typeFilter,
+    onChange: e => setTypeFilter(e.target.value),
+    className: "text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+  }, React.createElement("option", {
+    value: "all"
+  }, "Todos los tipos"), React.createElement("option", {
+    value: "dom_manipulation"
+  }, "Manipulaci\xF3n DOM"), React.createElement("option", {
+    value: "scraping"
+  }, "Scraping"), React.createElement("option", {
+    value: "brute_force"
+  }, "Fuerza bruta"), React.createElement("option", {
+    value: "bot_blocked"
+  }, "Bot bloqueado"), React.createElement("option", {
+    value: "ip_blocked"
+  }, "IP bloqueada")), React.createElement("button", {
+    onClick: () => setShowReviewed(v => !v),
+    className: `text-xs font-bold px-3 py-2 rounded-xl border transition-all ${showReviewed ? 'btn-melius' : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800'}`
+  }, showReviewed ? 'Mostrando todos' : 'Solo sin revisar'), React.createElement("button", {
+    onClick: load,
+    className: "text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 bg-white dark:bg-slate-800 hover:bg-slate-50 transition-all"
+  }, React.createElement(Icon, {
+    name: "RefreshCw",
+    size: 13
+  })))), loading && React.createElement("div", {
+    className: "text-center py-10 text-slate-400 text-sm"
+  }, "Cargando..."), error && React.createElement("div", {
+    className: "text-center py-10 text-red-500 text-sm"
+  }, error), !loading && !error && events.length === 0 && React.createElement("div", {
+    className: "text-center py-12"
+  }, React.createElement("div", {
+    className: "text-4xl mb-3"
+  }, "\uD83D\uDD12"), React.createElement("p", {
+    className: "font-black text-slate-600 dark:text-slate-300"
+  }, "Sin eventos de seguridad"), React.createElement("p", {
+    className: "text-xs text-slate-400 mt-1"
+  }, "No se han detectado actividades sospechosas con los filtros actuales.")), !loading && !error && events.length > 0 && React.createElement("div", {
+    className: "flex flex-col gap-3"
+  }, events.map(ev => {
+    const meta = typeLabels[ev.event_type] || {
+      label: ev.event_type,
+      color: 'bg-slate-100 text-slate-600'
+    };
+    const evidence = parseEvidence(ev.detail || '');
+    const detail = cleanDetail(ev.detail || '');
+    const isExpanded = expandedId === ev.id;
+    return React.createElement("div", {
+      key: ev.id,
+      className: `rounded-2xl border transition-all ${ev.reviewed ? 'border-slate-100 dark:border-slate-800 opacity-60' : 'border-red-100 dark:border-red-900/40 bg-red-50/30 dark:bg-red-950/10'}`
+    }, React.createElement("div", {
+      className: "p-4 flex flex-col sm:flex-row sm:items-start gap-3"
+    }, React.createElement("div", {
+      className: "shrink-0"
+    }, React.createElement("span", {
+      className: `text-[10px] font-black uppercase px-2 py-1 rounded-lg ${meta.color}`
+    }, meta.label)), React.createElement("div", {
+      className: "flex-1 min-w-0"
+    }, React.createElement("div", {
+      className: "flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mb-1"
+    }, React.createElement("span", {
+      className: "font-mono font-bold text-slate-700 dark:text-slate-200"
+    }, ev.ip), ev.user_name && React.createElement("span", {
+      className: "font-bold text-slate-600 dark:text-slate-300"
+    }, ev.user_name), ev.user_email && React.createElement("span", {
+      className: "text-slate-400"
+    }, ev.user_email), React.createElement("span", null, new Date(ev.created_at).toLocaleString('es-MX'))), React.createElement("p", {
+      className: "text-xs text-slate-600 dark:text-slate-300 break-all"
+    }, detail), evidence && React.createElement("div", {
+      className: "mt-2 flex flex-wrap gap-2"
+    }, evidence.action_attempted && React.createElement("span", {
+      className: "text-[10px] font-bold bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 px-2 py-0.5 rounded-lg"
+    }, "Intento: ", evidence.action_attempted), React.createElement("span", {
+      className: `text-[10px] font-bold px-2 py-0.5 rounded-lg ${evidence.succeeded ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'}`
+    }, evidence.succeeded ? 'Logrado' : 'Bloqueado'), ev.user_agent && React.createElement("button", {
+      onClick: () => setExpandedId(isExpanded ? null : ev.id),
+      className: "text-[10px] font-bold text-melius-cyan underline"
+    }, isExpanded ? 'Ocultar detalle' : 'Ver evidencia completa')), isExpanded && React.createElement("div", {
+      className: "mt-3 p-3 bg-slate-900 dark:bg-black rounded-xl text-[10px] font-mono text-green-400 break-all space-y-1"
+    }, ev.user_agent && React.createElement("p", null, React.createElement("span", {
+      className: "text-slate-400"
+    }, "UA:"), " ", ev.user_agent), ev.uri && React.createElement("p", null, React.createElement("span", {
+      className: "text-slate-400"
+    }, "URI:"), " ", ev.uri), evidence?.fingerprint && React.createElement("p", null, React.createElement("span", {
+      className: "text-slate-400"
+    }, "Fingerprint:"), " ", evidence.fingerprint), evidence?.timestamp_ms && React.createElement("p", null, React.createElement("span", {
+      className: "text-slate-400"
+    }, "Timestamp:"), " ", new Date(evidence.timestamp_ms).toISOString()))), !ev.reviewed && React.createElement("button", {
+      onClick: () => markReviewed(ev.id),
+      disabled: busyId === ev.id,
+      className: "shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-300 transition-all disabled:opacity-50"
+    }, busyId === ev.id ? '...' : 'Revisado'), ev.reviewed && React.createElement("span", {
+      className: "shrink-0 text-[10px] text-emerald-500 font-black uppercase"
+    }, "Revisado")));
+  }))));
+};
 const TzMismatchBadge = ({
   rec
 }) => {
@@ -6432,12 +6635,29 @@ const AdminRecordCard = ({
 (function domHardening() {
   const rootEl = document.getElementById('root');
   if (!rootEl || typeof MutationObserver === 'undefined') return;
+  const buildFingerprint = () => {
+    try {
+      const nav = window.navigator;
+      return [nav.userAgent.slice(0, 120), nav.language, String(screen.width) + 'x' + String(screen.height), String(nav.hardwareConcurrency || ''), Intl.DateTimeFormat().resolvedOptions().timeZone, String(nav.platform || '')].join('|');
+    } catch (_) {
+      return 'unknown';
+    }
+  };
+  const showWarning = action => {
+    if (document.getElementById('_sec_warn')) return;
+    const overlay = document.createElement('div');
+    overlay.id = '_sec_warn';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;padding:32px;text-align:center;';
+    overlay.innerHTML = '<div style="max-width:560px;">' + '<div style="font-size:48px;margin-bottom:24px;">&#9888;</div>' + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>' + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g, '&lt;') + '</span></p>' + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:24px;">Este sistema monitorea y registra manipulaciones del DOM en tiempo real.<br>Tu IP, huella digital del navegador y la accion realizada han sido enviados<br>al equipo de seguridad para su revision.</p>' + '<p style="color:#64748b;font-size:11px;">Si eres un administrador revisando la aplicacion, recarga la pagina normalmente.</p>' + '<button onclick="document.getElementById(\'_sec_warn\').remove()" style="margin-top:24px;padding:10px 28px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:8px;cursor:pointer;font-size:12px;font-family:monospace;">Cerrar</button>' + '</div>';
+    document.body.appendChild(overlay);
+  };
   let reportThrottle = null;
-  const report = detail => {
+  const report = (detail, actionAttempted, succeeded) => {
+    showWarning(actionAttempted || detail);
     if (reportThrottle) return;
     reportThrottle = setTimeout(() => {
       reportThrottle = null;
-    }, 10000);
+    }, 8000);
     try {
       fetch('/api/anti-bot/dom-report', {
         method: 'POST',
@@ -6446,7 +6666,11 @@ const AdminRecordCard = ({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          detail: detail.slice(0, 500)
+          detail: detail.slice(0, 500),
+          action_attempted: (actionAttempted || '').slice(0, 100),
+          succeeded: !!succeeded,
+          fingerprint: buildFingerprint(),
+          timestamp_ms: Date.now()
         })
       }).catch(() => {});
     } catch (_) {}
@@ -6454,13 +6678,26 @@ const AdminRecordCard = ({
   const observer = new MutationObserver(mutations => {
     for (const m of mutations) {
       for (const node of m.addedNodes) {
-        if (node.nodeType === 1 && node.tagName === 'SCRIPT') {
-          report('script_injection: ' + (node.src || node.textContent.slice(0, 100)));
+        if (node.nodeType !== 1) continue;
+        if (node.tagName === 'SCRIPT') {
+          const src = node.src || node.textContent.slice(0, 120);
           node.remove();
+          report('script_injection: ' + src, 'inyectar_script', false);
+        }
+        if (node.tagName === 'IFRAME' && (node.style.display === 'none' || node.style.visibility === 'hidden' || node.width === '0')) {
+          node.remove();
+          report('hidden_iframe: ' + (node.src || '').slice(0, 120), 'inyectar_iframe_oculto', false);
+        }
+      }
+      if (m.type === 'childList') {
+        for (const node of m.removedNodes) {
+          if (node.id === 'root') {
+            report('root_removed', 'eliminar_contenedor_react', true);
+          }
         }
       }
       if (m.type === 'attributes' && m.target === rootEl) {
-        report('root_attr_modified: ' + m.attributeName);
+        report('root_attr_modified: ' + m.attributeName, 'modificar_atributo_root', true);
       }
     }
   });
@@ -6470,6 +6707,16 @@ const AdminRecordCard = ({
     attributes: true,
     attributeFilter: ['data-reactroot', 'id', 'class']
   });
+  const _origFetch = window.fetch;
+  const _origXHR = window.XMLHttpRequest;
+  setTimeout(() => {
+    if (window.fetch !== _origFetch) {
+      report('fetch_override_detected', 'interceptar_fetch', true);
+    }
+    if (window.XMLHttpRequest !== _origXHR) {
+      report('xhr_override_detected', 'interceptar_xhr', true);
+    }
+  }, 3000);
 })();
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(ToastProvider, null, React.createElement(BrandingProvider, null, React.createElement(App, null))));
