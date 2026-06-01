@@ -107,7 +107,7 @@ if (preg_match('#^admin/email-templates/(\d+)/([a-z_]+)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
-} elseif (preg_match('#^(admin/users)/(\d+)/(resend-invite)$#', $endpoint, $m)) {
+} elseif (preg_match('#^(admin/users)/(\d+)/(resend-invite|unblock|send-acta)$#', $endpoint, $m)) {
     $endpointBase = $m[1];
     $endpointId = (int)$m[2];
     $endpointAction = $m[3];
@@ -162,6 +162,12 @@ try {
                 return;
             case 'POST admin/users/resend-invite':
                 admin_users_resend_invite($endpointId);
+                return;
+            case 'POST admin/users/unblock':
+                admin_users_unblock($endpointId);
+                return;
+            case 'POST admin/users/send-acta':
+                admin_users_send_acta($endpointId, $body);
                 return;
             case 'POST admin/location-alerts/review':
                 admin_location_alerts_review($endpointId, $body);
@@ -259,6 +265,8 @@ try {
             auth_forgot_password($body);
         case 'POST auth/reset-password':
             auth_reset_password($body);
+        case 'POST auth/verify-password':
+            auth_verify_password($body);
 
         // --- Companies ---
         case 'GET companies':

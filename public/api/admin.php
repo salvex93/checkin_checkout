@@ -1242,6 +1242,108 @@ function admin_users_delete(int $id, array $body): never {
 }
 
 // =====================================================================
+// Desbloqueo de cuenta y acta administrativa
+// =====================================================================
+
+/**
+ * POST admin/users/{id}/unblock — desbloquea la cuenta de un usuario.
+ * Resetea failed_attempts, locked_until, limpia rate_limits de la cuenta.
+ * Solo admin/super_admin. Admin normal solo puede desbloquear usuarios de su empresa.
+ */
+function admin_users_unblock(int $id): never {
+    require_csrf();
+    $admin = require_admin();
+
+    $target = db_one(
+        'SELECT u.id, u.email, u.name, u.role, u.company_id, u.failed_attempts, u.locked_until, u.status
+           FROM users u WHERE u.id = ?',
+        [$id]
+    );
+    if (!$target) err('NOT_FOUND', 'Usuario no encontrado.', 404);
+
+    $isSuper = ($admin['role'] ?? '') === 'super_admin';
+    if ($target['role'] === 'super_admin' && !$isSuper) {
+        err('NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+    if (!$isSuper && (int)($target['company_id'] ?? 0) !== (int)($admin['company_id'] ?? -1)) {
+        err('NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+
+    db_exec(
+        "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?",
+        [$id]
+    );
+    db_exec("DELETE FROM rate_limits WHERE `key` = ?", [$target['email']]);
+
+    audit_log((int)$admin['id'], 'admin_user_unblocked', [
+        'user_id' => $id,
+        'actor'   => $admin['email'],
+    ]);
+    ok(['message' => 'Cuenta desbloqueada correctamente.']);
+}
+
+/**
+ * POST admin/users/{id}/send-acta — envia un acta administrativa por correo al usuario.
+ * Body: { subject: string, message: string }
+ * El correo llega en nombre del admin con el mensaje redactado.
+ */
+function admin_users_send_acta(int $id, array $body): never {
+    require_csrf();
+    $admin = require_admin();
+
+    $target = db_one(
+        'SELECT u.id, u.email, u.name, u.role, u.company_id, c.name AS company_name,
+                b.id AS brand_id, b.name AS brand_name
+           FROM users u
+           LEFT JOIN companies c ON c.id = u.company_id
+           LEFT JOIN brands b ON b.id = c.brand_id
+          WHERE u.id = ?',
+        [$id]
+    );
+    if (!$target) err('NOT_FOUND', 'Usuario no encontrado.', 404);
+
+    $isSuper = ($admin['role'] ?? '') === 'super_admin';
+    if ($target['role'] === 'super_admin' && !$isSuper) {
+        err('NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+    if (!$isSuper && (int)($target['company_id'] ?? 0) !== (int)($admin['company_id'] ?? -1)) {
+        err('NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+
+    $subject = validate_string($body, 'subject', 5, 200);
+    $message = validate_string($body, 'message', 10, 3000);
+
+    $actorName    = (string)($admin['name'] ?? $admin['email'] ?? 'Administrador');
+    $companyName  = (string)($target['company_name'] ?? 'Melius Services');
+    $brandForEmail = resolve_email_brand(isset($target['brand_id']) ? (int)$target['brand_id'] : null);
+
+    $nameSafe    = htmlspecialchars((string)$target['name'], ENT_QUOTES, 'UTF-8');
+    $actorSafe   = htmlspecialchars($actorName, ENT_QUOTES, 'UTF-8');
+    $companySafe = htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8');
+    $msgHtml     = nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+    $dateSafe    = (new DateTimeImmutable('now', new DateTimeZone('America/Mexico_City')))->format('d/m/Y H:i');
+
+    $bodyHtml = "<p>Estimado(a) <strong>{$nameSafe}</strong>,</p>"
+        . "<p>Por medio del presente, le comunicamos lo siguiente:</p>"
+        . "<blockquote style='border-left:4px solid #e2e8f0;margin:16px 0;padding:12px 16px;background:#f8fafc;color:#334155;line-height:1.7;'>{$msgHtml}</blockquote>"
+        . "<p style='color:#475569;font-size:13px;margin-top:24px;'>Emitido por: <strong>{$actorSafe}</strong> &mdash; {$companySafe}<br>Fecha: {$dateSafe}</p>"
+        . "<p style='color:#94a3b8;font-size:12px;margin-top:8px;'>Este correo constituye un acta administrativa formal. Consérvelo para sus registros.</p>";
+
+    $bodyText = "Estimado(a) {$target['name']},\n\n{$message}\n\nEmitido por: {$actorName} — {$companyName}\nFecha: {$dateSafe}\n";
+
+    $subjectFull = "[Acta administrativa] " . $subject;
+    $sent = mail_send((string)$target['email'], $subjectFull, tpl_layout($subjectFull, $bodyHtml, $brandForEmail), $bodyText);
+
+    audit_log((int)$admin['id'], 'admin_acta_sent', [
+        'target_user_id' => $id,
+        'subject'        => $subject,
+    ]);
+
+    if (!$sent) err('MAIL_FAIL', 'El acta fue registrada pero el correo no pudo enviarse. Reintenta.', 500);
+    ok(['message' => 'Acta administrativa enviada correctamente.']);
+}
+
+// =====================================================================
 // Email templates — CRUD para super_admin. Permite editar subject, intro y
 // cta_label por (brand_id, kind). El HTML del layout (hero, footer, colores)
 // permanece blindado en mailer.php para mantener compatibilidad Gmail/Outlook.

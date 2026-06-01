@@ -3666,6 +3666,10 @@
             const [bulkOpen, setBulkOpen] = useState(false);
             const [resending, setResending] = useState(null);
             const [resendBusy, setResendBusy] = useState(false);
+            const [unblocking, setUnblocking] = useState(null);
+            const [acta, setActa] = useState(null);
+            const [actaForm, setActaForm] = useState({ subject: '', message: '' });
+            const [actaBusy, setActaBusy] = useState(false);
             const load = useCallback(async () => {
                 setLoading(true); setError(null);
                 try {
@@ -3723,6 +3727,29 @@
                 } catch (e) { toast('error', e.message); }
             };
 
+            const doUnblock = async (a) => {
+                setUnblocking(a.id);
+                try {
+                    await apiFetch(`admin/users/${a.id}/unblock`, { method: 'POST', body: {} });
+                    toast('success', `Cuenta de ${a.name} desbloqueada.`);
+                    load();
+                } catch (e) { toast('error', e.message); }
+                finally { setUnblocking(null); }
+            };
+
+            const openActa = (a) => { setActa(a); setActaForm({ subject: '', message: '' }); };
+            const closeActa = () => { if (!actaBusy) { setActa(null); } };
+            const doSendActa = async () => {
+                if (!acta) return;
+                setActaBusy(true);
+                try {
+                    await apiFetch(`admin/users/${acta.id}/send-acta`, { method: 'POST', body: actaForm });
+                    toast('success', 'Acta administrativa enviada.');
+                    setActa(null);
+                } catch (e) { toast('error', e.message); }
+                finally { setActaBusy(false); }
+            };
+
             return (
                 <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -3773,6 +3800,18 @@
                                             </button>
                                         )}
                                         <button onClick={() => toggleStatus(a)} className="text-xs font-bold text-blue-600 hover:underline">{a.status === 'active' ? 'Desactivar' : 'Activar'}</button>
+                                        {(a.failed_attempts > 0 || a.locked_until) && (
+                                            <button onClick={() => doUnblock(a)} disabled={unblocking === a.id}
+                                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 inline-flex items-center gap-1.5 disabled:opacity-50">
+                                                <Icon name="Unlock" size={13} />
+                                                {unblocking === a.id ? '...' : 'Desbloquear'}
+                                            </button>
+                                        )}
+                                        <button onClick={() => openActa(a)}
+                                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 inline-flex items-center gap-1.5">
+                                            <Icon name="FileText" size={13} />
+                                            Acta
+                                        </button>
                                     </div>
                                 </div>
                             ))}
@@ -3783,6 +3822,32 @@
                         <InviteForm defaultRole="consultant" isSuper={isSuper} onSave={invite} onCancel={() => setInviting(false)} />
                     </Modal>
                     <ResendInviteModal open={!!resending} target={resending} busy={resendBusy} onConfirm={doResend} onCancel={closeResend} />
+                    {/* Modal acta administrativa */}
+                    <Modal open={!!acta} onClose={closeActa} title={`Acta administrativa — ${acta?.name || ''}`} maxWidth="max-w-xl" showHeader>
+                        <div className="p-5 flex flex-col gap-4">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">El correo llegará a <strong>{acta?.email}</strong> con firma de administrador y fecha. Guarda una copia en tus registros.</p>
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Asunto del acta</label>
+                                <input value={actaForm.subject} onChange={e => setActaForm(f => ({ ...f, subject: e.target.value }))}
+                                    placeholder="Ej. Incumplimiento de horario — 01/06/2026"
+                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-medium" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Contenido del acta</label>
+                                <textarea value={actaForm.message} onChange={e => setActaForm(f => ({ ...f, message: e.target.value }))}
+                                    rows={6} placeholder="Redacta el acta. Puedes describir el incidente, las medidas tomadas y las consecuencias en caso de reincidencia..."
+                                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-medium resize-none" />
+                            </div>
+                            <div className="flex gap-3 justify-end pt-1">
+                                <button onClick={closeActa} disabled={actaBusy} className="px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
+                                <button onClick={doSendActa} disabled={actaBusy || !actaForm.subject.trim() || !actaForm.message.trim()}
+                                    className="px-5 py-2 rounded-xl btn-melius font-bold text-sm disabled:opacity-50 flex items-center gap-2">
+                                    <Icon name="Send" size={14} />
+                                    {actaBusy ? 'Enviando...' : 'Enviar acta'}
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
                     <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title="Carga masiva CSV" maxWidth="max-w-3xl" showHeader>
                         <BulkInviteForm
                             isSuper={isSuper}
@@ -4933,15 +4998,56 @@
                 const overlay = document.createElement('div');
                 overlay.id = '_sec_warn';
                 overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace;padding:32px;text-align:center;';
+
+                const bypassId   = '_sec_bypass_pw';
+                const bypassBtn  = '_sec_bypass_btn';
+                const bypassMsg  = '_sec_bypass_msg';
+
                 overlay.innerHTML = '<div style="max-width:560px;">'
                     + '<div style="font-size:48px;margin-bottom:24px;">&#9888;</div>'
                     + '<p style="color:#ef4444;font-size:20px;font-weight:900;letter-spacing:0.05em;margin-bottom:16px;">ACTIVIDAD SOSPECHOSA DETECTADA</p>'
                     + '<p style="color:#f97316;font-size:14px;font-weight:700;margin-bottom:12px;">Intento registrado: <span style="color:#fbbf24;">' + action.replace(/</g,'&lt;') + '</span></p>'
                     + '<p style="color:#94a3b8;font-size:13px;line-height:1.6;margin-bottom:24px;">Este sistema monitorea y registra manipulaciones del DOM en tiempo real.<br>Tu IP, huella digital del navegador y la accion realizada han sido enviados<br>al equipo de seguridad para su revision.</p>'
-                    + '<p style="color:#64748b;font-size:11px;">Si eres un administrador revisando la aplicacion, recarga la pagina normalmente.</p>'
-                    + '<button onclick="document.getElementById(\'_sec_warn\').remove()" style="margin-top:24px;padding:10px 28px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:8px;cursor:pointer;font-size:12px;font-family:monospace;">Cerrar</button>'
+                    + '<p style="color:#64748b;font-size:11px;margin-bottom:20px;">Si eres super administrador, confirma tu contrasena para continuar.</p>'
+                    + '<div style="display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;">'
+                    + '<input id="' + bypassId + '" type="password" placeholder="Contrasena de super admin" autocomplete="current-password" style="padding:10px 14px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:8px;font-size:13px;font-family:monospace;min-width:220px;" />'
+                    + '<button id="' + bypassBtn + '" style="padding:10px 20px;background:#0f172a;color:#94a3b8;border:1px solid #334155;border-radius:8px;cursor:pointer;font-size:12px;font-family:monospace;">Verificar</button>'
+                    + '</div>'
+                    + '<p id="' + bypassMsg + '" style="color:#ef4444;font-size:11px;margin-top:8px;min-height:16px;"></p>'
                     + '</div>';
+
                 document.body.appendChild(overlay);
+
+                const btn = document.getElementById(bypassBtn);
+                const inp = document.getElementById(bypassId);
+                const msg = document.getElementById(bypassMsg);
+                if (btn && inp) {
+                    btn.addEventListener('click', () => {
+                        const pw = inp.value;
+                        if (!pw) { msg.textContent = 'Ingresa tu contrasena.'; return; }
+                        btn.textContent = '...';
+                        btn.disabled = true;
+                        fetch('/api/auth/verify-password', {
+                            method: 'POST', credentials: 'same-origin',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: pw }),
+                        }).then(r => r.json()).then(d => {
+                            if (d.ok && d.is_super_admin) {
+                                overlay.remove();
+                            } else if (d.ok) {
+                                msg.textContent = 'Solo super administradores pueden cerrar esta alerta.';
+                                btn.textContent = 'Verificar'; btn.disabled = false;
+                            } else {
+                                msg.textContent = 'Contrasena incorrecta.';
+                                btn.textContent = 'Verificar'; btn.disabled = false;
+                            }
+                        }).catch(() => {
+                            msg.textContent = 'Error de red. Intenta de nuevo.';
+                            btn.textContent = 'Verificar'; btn.disabled = false;
+                        });
+                    });
+                    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
+                }
             };
 
             let reportThrottle = null;

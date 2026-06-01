@@ -123,14 +123,19 @@ final class DomHardeningReportTest extends TestCase
 
     public function testUserIdCapturedFromSession(): void
     {
+        // Insertar usuario real para satisfacer FK
+        $pdo = Database::pdo();
+        $pdo->exec("INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active, status)
+                    VALUES (42, 'test42@test.local', 'Test 42', 'hash', 'consultant', 1, 'active')");
+
         $_SESSION['user_id'] = 42;
         $body = ['detail' => 'hidden_iframe: https://evil.com/track'];
         anti_bot_dom_report_testable($body);
 
-        $row = Database::pdo()
-            ->query("SELECT user_id FROM security_events LIMIT 1")
+        $row = $pdo->query("SELECT user_id FROM security_events WHERE event_type='dom_manipulation' ORDER BY id DESC LIMIT 1")
             ->fetch(PDO::FETCH_ASSOC);
 
+        $this->assertNotFalse($row, 'Se esperaba al menos una fila en security_events');
         $this->assertSame('42', (string)$row['user_id']);
         unset($_SESSION['user_id']);
     }

@@ -278,7 +278,7 @@ function admin_agents_search(): never {
     $rows = db_all(
         "SELECT u.id, u.email, u.name, u.role, u.status, u.is_active,
                 u.company_id, c.name AS company_name, u.created_at,
-                u.must_change_password
+                u.must_change_password, u.failed_attempts, u.locked_until
            FROM users u
            LEFT JOIN companies c ON c.id = u.company_id
           WHERE {$whereSql}
@@ -302,6 +302,8 @@ function admin_agents_search(): never {
             'company_name' => $r['company_name'],
             'created_at' => $r['created_at'],
             'must_change_password' => (int)($r['must_change_password'] ?? 0) === 1,
+            'failed_attempts' => (int)($r['failed_attempts'] ?? 0),
+            'locked_until' => $r['locked_until'],
         ], $rows),
     ]);
 }

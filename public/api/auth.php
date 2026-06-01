@@ -402,3 +402,19 @@ function auth_captcha_verify(array $body): never {
     $_SESSION['_captcha_verified_at'] = time();
     ok(['verified' => true]);
 }
+
+/**
+ * POST auth/verify-password — verifica la contraseña del usuario en sesion activa.
+ * Usado exclusivamente por el bypass de super_admin en la alerta DOM hardening.
+ * Retorna { ok: true, is_super_admin: bool } si la contraseña es correcta.
+ * No genera eventos de seguridad ni bloquea la cuenta (es validacion interna).
+ */
+function auth_verify_password(array $body): never {
+    $u = require_login();
+    $password = validate_string($body, 'password', 1, 200);
+    $hash = (string)(db_one('SELECT password_hash FROM users WHERE id = ?', [(int)$u['id']])['password_hash'] ?? '');
+    if ($hash === '' || !password_verify($password, $hash)) {
+        ok(['ok' => false, 'is_super_admin' => false]);
+    }
+    ok(['ok' => true, 'is_super_admin' => ($u['role'] === 'super_admin')]);
+}
