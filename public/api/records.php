@@ -302,6 +302,8 @@ function records_clockout(array $body = []): never {
     $today = $nowDt->format('Y-m-d');
     $now = $nowDt->format('H:i');
 
+    if ((int)$nowDt->format('H') < 6) err('CLOCKOUT_TOO_EARLY', 'La salida solo puede registrarse a partir de las 06:00.', 403);
+
     $rec = db_one('SELECT * FROM attendance_records WHERE user_id = ? AND work_date = ?', [$u['id'], $today]);
     if (!$rec) err('NOT_CHECKED_IN', 'Debes marcar entrada primero.', 409);
     if ($rec['exit_time']) err('ALREADY_CHECKED_OUT', 'Ya registraste tu salida hoy.', 409);

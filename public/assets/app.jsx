@@ -1377,6 +1377,10 @@
 
             const handleClockOut = async () => {
                 if (submitting) return;
+                if (new Date().getHours() < 6) {
+                    toast('warning', 'La salida solo puede registrarse a partir de las 06:00.');
+                    return;
+                }
                 setSubmitting(true);
                 try {
                     const d = await apiFetch('records/clockout', { method: 'POST', body: {
@@ -1501,22 +1505,30 @@
                                     </div>
                                 </button>
 
-                                <button data-tour="btn-clockout" onClick={handleClockOut} disabled={!todayRecord || !!todayRecord?.exit_time || submitting} aria-label="Marcar salida"
-                                    className={`p-6 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[3rem] border-4 transition-all flex flex-col items-center gap-4 sm:gap-5 no-select ${
-                                        (!todayRecord || todayRecord?.exit_time)
-                                            ? 'bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800 opacity-60 grayscale cursor-not-allowed'
-                                            : 'bg-white dark:bg-slate-900 border-orange-50 dark:border-orange-900/40 hover:border-orange-400 dark:hover:border-orange-500 shadow-2xl shadow-orange-900/5 dark:shadow-orange-950/40 active:scale-95'
-                                    }`}>
-                                    <div className={`p-4 sm:p-6 rounded-2xl sm:rounded-3xl ${(!todayRecord || todayRecord?.exit_time) ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600' : 'bg-orange-600 text-white shadow-xl shadow-orange-200 dark:shadow-orange-900/40'}`}>
-                                        <Icon name="LogOut" size={28} className="sm:hidden" />
-                                        <Icon name="LogOut" size={36} className="hidden sm:block" />
-                                    </div>
-                                    <div className="text-center">
-                                        <span className="block font-black text-xl sm:text-2xl uppercase tracking-tighter text-slate-800 dark:text-slate-100">Salida</span>
-                                        {todayRecord?.exit_time && <span className="text-orange-600 dark:text-orange-300 font-black font-mono text-xs sm:text-sm uppercase bg-orange-50 dark:bg-orange-900/40 px-3 py-1 rounded-lg mt-2 inline-block">Registrada: {todayRecord.exit_time}</span>}
-                                        {!todayRecord && <span className="text-slate-300 dark:text-slate-600 font-bold text-[10px] uppercase block mt-2">Pendiente de entrada</span>}
-                                    </div>
-                                </button>
+                                {(() => {
+                                    const beforeSix = new Date().getHours() < 6;
+                                    const clockoutDisabled = !todayRecord || !!todayRecord?.exit_time || submitting || beforeSix;
+                                    const clockoutInactive = !todayRecord || !!todayRecord?.exit_time || beforeSix;
+                                    return (
+                                        <button data-tour="btn-clockout" onClick={handleClockOut} disabled={clockoutDisabled} aria-label="Marcar salida"
+                                            className={`p-6 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[3rem] border-4 transition-all flex flex-col items-center gap-4 sm:gap-5 no-select ${
+                                                clockoutInactive
+                                                    ? 'bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800 opacity-60 grayscale cursor-not-allowed'
+                                                    : 'bg-white dark:bg-slate-900 border-orange-50 dark:border-orange-900/40 hover:border-orange-400 dark:hover:border-orange-500 shadow-2xl shadow-orange-900/5 dark:shadow-orange-950/40 active:scale-95'
+                                            }`}>
+                                            <div className={`p-4 sm:p-6 rounded-2xl sm:rounded-3xl ${clockoutInactive ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600' : 'bg-orange-600 text-white shadow-xl shadow-orange-200 dark:shadow-orange-900/40'}`}>
+                                                <Icon name="LogOut" size={28} className="sm:hidden" />
+                                                <Icon name="LogOut" size={36} className="hidden sm:block" />
+                                            </div>
+                                            <div className="text-center">
+                                                <span className="block font-black text-xl sm:text-2xl uppercase tracking-tighter text-slate-800 dark:text-slate-100">Salida</span>
+                                                {todayRecord?.exit_time && <span className="text-orange-600 dark:text-orange-300 font-black font-mono text-xs sm:text-sm uppercase bg-orange-50 dark:bg-orange-900/40 px-3 py-1 rounded-lg mt-2 inline-block">Registrada: {todayRecord.exit_time}</span>}
+                                                {!todayRecord && <span className="text-slate-300 dark:text-slate-600 font-bold text-[10px] uppercase block mt-2">Pendiente de entrada</span>}
+                                                {todayRecord && !todayRecord.exit_time && beforeSix && <span className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase block mt-2">Disponible a las 06:00</span>}
+                                            </div>
+                                        </button>
+                                    );
+                                })()}
                             </div>
 
                             {/* Card vacaciones */}
