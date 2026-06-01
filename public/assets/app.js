@@ -1853,8 +1853,8 @@ const UserDashboard = ({
   };
   const handleClockOut = async () => {
     if (submitting) return;
-    if (new Date().getHours() < 6) {
-      toast('warning', 'La salida solo puede registrarse a partir de las 06:00.');
+    if (new Date().getHours() < 18) {
+      toast('warning', 'La salida solo puede registrarse a partir de las 18:00.');
       return;
     }
     setSubmitting(true);
@@ -2013,9 +2013,9 @@ const UserDashboard = ({
   }, "Entrada"), todayRecord && React.createElement("span", {
     className: "text-blue-600 dark:text-blue-300 font-black font-mono text-xs sm:text-sm uppercase bg-blue-50 dark:bg-blue-900/40 px-3 py-1 rounded-lg mt-2 inline-block"
   }, "Registrada: ", todayRecord.entry_time))), (() => {
-    const beforeSix = new Date().getHours() < 6;
-    const clockoutDisabled = !todayRecord || !!todayRecord?.exit_time || submitting || beforeSix;
-    const clockoutInactive = !todayRecord || !!todayRecord?.exit_time || beforeSix;
+    const beforeEighteen = new Date().getHours() < 18;
+    const clockoutDisabled = !todayRecord || !!todayRecord?.exit_time || submitting || beforeEighteen;
+    const clockoutInactive = !todayRecord || !!todayRecord?.exit_time || beforeEighteen;
     return React.createElement("button", {
       "data-tour": "btn-clockout",
       onClick: handleClockOut,
@@ -2040,9 +2040,9 @@ const UserDashboard = ({
       className: "text-orange-600 dark:text-orange-300 font-black font-mono text-xs sm:text-sm uppercase bg-orange-50 dark:bg-orange-900/40 px-3 py-1 rounded-lg mt-2 inline-block"
     }, "Registrada: ", todayRecord.exit_time), !todayRecord && React.createElement("span", {
       className: "text-slate-300 dark:text-slate-600 font-bold text-[10px] uppercase block mt-2"
-    }, "Pendiente de entrada"), todayRecord && !todayRecord.exit_time && beforeSix && React.createElement("span", {
+    }, "Pendiente de entrada"), todayRecord && !todayRecord.exit_time && beforeEighteen && React.createElement("span", {
       className: "text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase block mt-2"
-    }, "Disponible a las 06:00")));
+    }, "Disponible a las 18:00")));
   })()), React.createElement("div", {
     "data-tour": "btn-vacation",
     className: "bg-white dark:bg-slate-900 p-5 sm:p-7 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"

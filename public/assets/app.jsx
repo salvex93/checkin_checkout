@@ -1377,8 +1377,8 @@
 
             const handleClockOut = async () => {
                 if (submitting) return;
-                if (new Date().getHours() < 6) {
-                    toast('warning', 'La salida solo puede registrarse a partir de las 06:00.');
+                if (new Date().getHours() < 18) {
+                    toast('warning', 'La salida solo puede registrarse a partir de las 18:00.');
                     return;
                 }
                 setSubmitting(true);
@@ -1506,9 +1506,9 @@
                                 </button>
 
                                 {(() => {
-                                    const beforeSix = new Date().getHours() < 6;
-                                    const clockoutDisabled = !todayRecord || !!todayRecord?.exit_time || submitting || beforeSix;
-                                    const clockoutInactive = !todayRecord || !!todayRecord?.exit_time || beforeSix;
+                                    const beforeEighteen = new Date().getHours() < 18;
+                                    const clockoutDisabled = !todayRecord || !!todayRecord?.exit_time || submitting || beforeEighteen;
+                                    const clockoutInactive = !todayRecord || !!todayRecord?.exit_time || beforeEighteen;
                                     return (
                                         <button data-tour="btn-clockout" onClick={handleClockOut} disabled={clockoutDisabled} aria-label="Marcar salida"
                                             className={`p-6 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[3rem] border-4 transition-all flex flex-col items-center gap-4 sm:gap-5 no-select ${
@@ -1524,7 +1524,7 @@
                                                 <span className="block font-black text-xl sm:text-2xl uppercase tracking-tighter text-slate-800 dark:text-slate-100">Salida</span>
                                                 {todayRecord?.exit_time && <span className="text-orange-600 dark:text-orange-300 font-black font-mono text-xs sm:text-sm uppercase bg-orange-50 dark:bg-orange-900/40 px-3 py-1 rounded-lg mt-2 inline-block">Registrada: {todayRecord.exit_time}</span>}
                                                 {!todayRecord && <span className="text-slate-300 dark:text-slate-600 font-bold text-[10px] uppercase block mt-2">Pendiente de entrada</span>}
-                                                {todayRecord && !todayRecord.exit_time && beforeSix && <span className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase block mt-2">Disponible a las 06:00</span>}
+                                                {todayRecord && !todayRecord.exit_time && beforeEighteen && <span className="text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase block mt-2">Disponible a las 18:00</span>}
                                             </div>
                                         </button>
                                     );
