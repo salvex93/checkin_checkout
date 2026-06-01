@@ -2383,15 +2383,18 @@ const AdminPanel = ({
   }, []);
   const refreshCounts = useCallback(async () => {
     try {
-      const [cr, vac, al] = await Promise.all([apiFetch('admin/change-requests'), apiFetch('admin/vacations?status=pending').catch(() => ({
+      const [cr, vac, al, sec] = await Promise.all([apiFetch('admin/change-requests'), apiFetch('admin/vacations?status=pending').catch(() => ({
         requests: []
       })), apiFetch('admin/location-alerts/pending-count').catch(() => ({
         pending: 0
+      })), apiFetch('admin/security-events?type=all&reviewed=false').catch(() => ({
+        unreviewed_count: 0
       }))]);
       setCounts({
         changes: (cr.requests || []).length,
         vacations: (vac.requests || []).length,
-        alerts: al.pending || 0
+        alerts: al.pending || 0,
+        security: sec.unreviewed_count || 0
       });
     } catch (_) {}
   }, []);
@@ -2457,14 +2460,21 @@ const AdminPanel = ({
     size: 14
   })), moreOpen && React.createElement("div", {
     className: "absolute right-0 mt-2 w-52 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-30"
-  }, secondaryTabs.map(t => React.createElement("button", {
-    key: t.id,
-    onClick: () => goTab(t.id),
-    className: `w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 transition-all ${activeTab === t.id ? 'bg-cyan-50 dark:bg-cyan-900/20 text-melius-cyan' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`
-  }, React.createElement(Icon, {
-    name: t.icon,
-    size: 16
-  }), t.label)))), React.createElement("div", {
+  }, secondaryTabs.map(t => {
+    const badge = t.id === 'alerts' && counts.alerts > 0 ? counts.alerts : t.id === 'security' && counts.security > 0 ? counts.security : 0;
+    return React.createElement("button", {
+      key: t.id,
+      onClick: () => goTab(t.id),
+      className: `w-full text-left px-4 py-2 text-sm font-bold flex items-center gap-3 transition-all ${activeTab === t.id ? 'bg-cyan-50 dark:bg-cyan-900/20 text-melius-cyan' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`
+    }, React.createElement(Icon, {
+      name: t.icon,
+      size: 16
+    }), React.createElement("span", {
+      className: "flex-1"
+    }, t.label), badge > 0 && React.createElement("span", {
+      className: "min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center"
+    }, badge));
+  }))), React.createElement("div", {
     "data-tour": "admin-user-menu",
     className: "relative ml-1",
     ref: userDesktopRef
